@@ -264,6 +264,9 @@ class StoreCompleteMixin:
         text = dict(zip((int(row["store_id"]) for row in hidden), self._store_complete_messages(hidden)))
 
         mapped_ids = set(full_map.values())
+        # only a host row that claims exactly this one store row (a composite carrier holds its constituents'
+        # text in one row and must keep claiming them together)
+        single_claims = {ids[0] for message_id, ids in claims.items() if len(ids) == 1 and message_id not in full_map}
         rehydrated: dict = {}  # fork: store_id -> the stored-bytes row that now carries it (see the rows loop)
 
         def ids_of(message, ids) -> list:
@@ -321,7 +324,7 @@ class StoreCompleteMixin:
                 dependent = True
                 continue
             if store_id in taken and store_id not in passive and store_id not in mapped_ids and index < len(chunk) \
-                    and position(chunk[index]) > store_id \
+                    and position(chunk[index]) > store_id and store_id in single_claims \
                     and not any(store_id in ids_of(m, i) for m, i in out):
                 # fork: the host row that claims this store row sits behind host rows mapped to LATER store
                 # rows (the host replayed newer copies of them), so the chunk can never emit it in store order
