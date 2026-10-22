@@ -33,7 +33,7 @@ from .compaction_policy import (
     resolve_threshold,
     threshold_tokens,
 )
-from .config import LCMConfig, _disabled_tool_names
+from .config import LCMConfig, _disabled_tool_names, host_message_uid_mode
 from .dag import SummaryDAG, SummaryNode
 from .diagnostics import _enforce_state_db_containment
 from .engine_registry import (
@@ -6592,6 +6592,44 @@ class LCMEngine(
             matched += 1
         return result
 
+    def _fork_uid_replayed_indexes(self, messages, cursor: int) -> set:
+        """fork: indexes >= ``cursor`` whose host ``message_uid`` has a canonical binding to a stored row this
+        session lineage owns AND whose payload equals that row (stored or host-rewrite form). Bindings are
+        written only after a row is stored, so such a row is a replay. Same uid with new bytes (an edit)
+        stays new and is stored as before (``version``)."""
+        from .host_uid import _valid_uid
+        if host_message_uid_mode() == "off" or cursor >= len(messages):
+            return set()
+        seen = Counter(m.get("message_uid") for m in messages if isinstance(m, dict))
+        # One host row per uid only: a uid shown twice is ambiguous (which occurrence is the stored one?),
+        # so those rows keep today's path.
+        wanted = {idx: m.get("message_uid") for idx, m in enumerate(messages)
+                  if idx >= cursor and isinstance(m, dict) and _valid_uid(m.get("message_uid"))
+                  and seen[m.get("message_uid")] == 1}
+        if not wanted:
+            return set()
+        lineage, _problem = self._host_uid_lineage_key()
+        if lineage is None:
+            return set()
+        # canonical = the row first stored for this uid; version = a later stored form of the same uid
+        # (the host merged an absorbed reply into it). Either proves the bytes are already stored.
+        bindings = self._store.host_uid_bindings_for(lineage, set(wanted.values()), ("canonical", "version"))
+        if not bindings:
+            return set()
+        owners = {str(self._session_id), *self._identity_anchor_chain()}
+        fetched: dict = {}
+        self._host_uid_fetch([sid for pairs in bindings.values() for sid, _kind in pairs], fetched)
+        out = set()
+        for idx, uid in wanted.items():
+            role = str(messages[idx].get("role") or "")
+            candidates = [sid for sid, _kind in bindings.get(uid, ())
+                          if fetched.get(int(sid)) is not None
+                          and str(fetched[int(sid)].get("session_id") or "") in owners
+                          and str(fetched[int(sid)].get("role") or "") == role]
+            if candidates and self._host_uid_bytes_match(candidates, messages[idx], fetched) is not None:
+                out.add(idx)
+        return out
+
     def _ingest_messages(
         self,
         messages: List[Dict[str, Any]],
@@ -6874,6 +6912,19 @@ class LCMEngine(
                 logger.info("LCM identity-anchor recognised %d replayed rows: session=%s cursor=%d incoming=%d",
                             len(anchor_plan["replayed"]), self._session_id, cursor, n)
         anchored_replay_indexes = anchor_plan["replayed"] if anchor_plan else set()
+        # fork: a host row whose message_uid already has a canonical binding to a stored row of this
+        # session lineage is a replay, even when the host dropped its timestamp (gateway replay strips
+        # assistant/tool timestamps -> #436 cannot match -> the whole history was re-stored on every
+        # restart / manual /compress, and the copies wedged compaction: "unresolved retained occurrence").
+        try:
+            uid_replays = self._fork_uid_replayed_indexes(messages, cursor) - set(anchored_replay_indexes)
+        except Exception as exc:
+            logger.warning("LCM fork uid-replay check failed (%s); ingest unchanged", type(exc).__name__)
+            uid_replays = set()
+        if uid_replays:
+            anchored_replay_indexes = set(anchored_replay_indexes) | uid_replays
+            logger.info("LCM fork: %d host rows recognised as replays by message_uid (no stamp): session=%s",
+                        len(uid_replays), self._session_id)
         anchor_remainders: dict[int, Any] = {}
         fresh_replay_messages = replay_messages  # #772: the host's rows, before any cached copy is spliced in
         if cursor > 0:
