@@ -1,0 +1,4 @@
+# file: /home/jun/code/lcm-x/guidance.py
+# hypothesis_version: 6.141.1
+
+[1024, 'hermes-lcm', 'recall-policy.md', 'references', 'skills', 'utf-8']

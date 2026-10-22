@@ -1,0 +1,4 @@
+# file: /home/jun/code/lcm-x/benchmarking/fixtures.py
+# hypothesis_version: 6.141.1
+
+[120, 250, 2000, '*.json', ':', 'SYNTHETIC', '[+-]?\\d+', '[^A-Za-z0-9]+', '_', 'assistant', 'benchmark_repeat', 'benchmarks/fixtures', 'canaries', 'content', 'deterministic', 'expected_query', 'id', 'messages', 'name', 'role', 'summary_failure', 'summary_failure_mode', 'summary_level', 'synthetic', 'system', 'tags', 'user', 'utf-8', 'value']

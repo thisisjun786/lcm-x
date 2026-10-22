@@ -1,0 +1,4 @@
+# file: /home/jun/code/lcm-x/bench/instruments/reliability/scorers/chronology.py
+# hypothesis_version: 6.141.1
+
+['after_store_id', 'after_tag', 'examples', 'lineage', 'store_id', 'tag', 'user', 'user_rows_checked', 'violations']

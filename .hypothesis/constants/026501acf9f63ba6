@@ -1,0 +1,4 @@
+# file: /home/jun/code/lcm-x/benchmarking/state_embedding_backfill.py
+# hypothesis_version: 6.141.1
+
+[0.02, 0.06, 0.12, 0.18, 10.0, 300.0, 1000000.0, '*.py', '--asset-root', '--assume-rate', '--batch-items', '--cost-cap', '--db', '--ledger', '--model', '--no-resume', '--provider', '--summary', '--timeout', '== DONE ==', 'USD_PER_MILLION', '__init__.py', '__main__', 'a', 'already_embedded', 'billed_tokens', 'chunked_states', 'cost_usd', 'dataset_name', 'dataset_revision', 'db', 'dim', 'domain', 'elapsed_s', 'harness_commit', 'hermes_lcm', 'ingest_config_digest', 'logged_50pct', 'model', 'pending', 'pending_at_start', 'profile_digest', 'projected_total_usd', 'provider', 'provider_calls', 'rate_usd_per_million', 'runtime_s', 'states_embedded', 'status', 'store_true', 'tier', 'total_states', 'ts', 'voyage', 'voyage-3', 'voyage-3-large', 'voyage-3.5', 'voyage-4', 'voyage-4-large', 'voyage-4-lite']

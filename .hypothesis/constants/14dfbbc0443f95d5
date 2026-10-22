@@ -1,0 +1,4 @@
+# file: /home/jun/code/lcm-x/bench/instruments/reliability/scorers/externalized.py
+# hypothesis_version: 6.141.1
+
+['LCM_HERMES_BASE_DIR', 'assistant', 'content', 'content_mismatch', 'deficit_rows', 'deficits', 'ingest_payload', 'invalid_content', 'keys', 'kind', 'missing_payload_file', 'n', 'no_content_field', 'reason', 'reasons', 'resolved', 'session_id', 'sha256', 'store_id', 'store_ids', 'tool', 'unreadable_payload', 'unresolved', 'user', 'utf-8']

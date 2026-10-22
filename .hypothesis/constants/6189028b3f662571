@@ -1,0 +1,4 @@
+# file: /home/jun/code/lcm-x/bench/instruments/reliability/scorers/host_rewrite.py
+# hypothesis_version: 6.141.1
+
+['ADOPT', 'FAIL', 'I0', 'I1', 'I2', 'I3', 'I5', 'LEGACY', 'PASS', 'REWRITE', 'UNSUPPORTED', 'acp', 'action', 'actions', 'active', 'active_count', 'after', 'commit', 'count', 'duplicates', 'effect', 'event', 'expected', 'failed_invariants', 'flush_resolve', 'lcm', 'notes', 'p8', 'p8-events.jsonl', 'path', 'reason', 'reported_duplicates', 'role', 'row_id', 'row_ids', 'session', 'supported', 'sweep', 'target_id', 'target_role', 'target_session', 'target_uid', 'transport', 'transports', 'uid', 'uid_snapshot', 'unreadable audit log', 'verdict']

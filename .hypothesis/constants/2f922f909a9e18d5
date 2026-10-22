@@ -1,0 +1,4 @@
+# file: /home/jun/code/lcm-x/bench/instruments/reliability/scorers/tool_groups.py
+# hypothesis_version: 6.141.1
+
+['-', '[]', 'assistant', 'covered', 'group', 'groups', 'id', 'node_id', 'split_groups', 'splits', 'summaries', 'tool']

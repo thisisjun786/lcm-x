@@ -1,0 +1,4 @@
+# file: /home/jun/code/lcm-x/occurrence_time.py
+# hypothesis_version: 6.141.1
+
+[0.0, '-', '/', 'char_end', 'char_start', 'count', 'day', 'event_at', 'event_date', 'event_time_source', 'explicit', 'friday', 'monday', 'month', 'observed_at', 'occurrence-time-v1', 'policy_version', 'precision', 'quote', 'reason', 'relative_to_session', 'saturday', 'session_date', 'simple', 'stored_at', 'sunday', 'support', 'thursday', 'today', 'tuesday', 'unit', 'unknown', 'wednesday', 'week', 'weekday', 'year', 'yesterday']

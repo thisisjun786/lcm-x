@@ -263,8 +263,12 @@ class StoreCompleteMixin:
         copy_proofs, admitted, group_twins = {}, set(), {}
         text = dict(zip((int(row["store_id"]) for row in hidden), self._store_complete_messages(hidden)))
 
+        mapped_ids = set(full_map.values())
+        rehydrated: dict = {}  # fork: store_id -> the stored-bytes row that now carries it (see the rows loop)
+
         def ids_of(message, ids) -> list:
-            return list(ids) + ([full_map[id(message)]] if id(message) in full_map else [])
+            found = list(ids) + ([full_map[id(message)]] if id(message) in full_map else [])
+            return [s for s in found if s not in rehydrated or rehydrated[s] is message] if rehydrated else found
 
         def position(message) -> int:
             return max(ids_of(message, claims.get(id(message), ())), default=0)
@@ -301,7 +305,7 @@ class StoreCompleteMixin:
         def emit_chunk(limit) -> bool:
             nonlocal index, dependent
             while index < len(chunk) and (limit is None or position(chunk[index]) < limit):
-                if not take(chunk[index], claims.get(id(chunk[index]), [])):
+                if not take(chunk[index], [s for s in claims.get(id(chunk[index]), []) if s not in rehydrated]):
                     return False
                 dependent = dependent and chunk[index].get("role") not in ("user", "system")
                 index += 1
@@ -315,6 +319,22 @@ class StoreCompleteMixin:
                 break
             if store_id in ignored:  # as compaction.py: an ignored row of any role makes the next replies dependent
                 dependent = True
+                continue
+            if store_id in taken and store_id not in passive and store_id not in mapped_ids and index < len(chunk) \
+                    and position(chunk[index]) > store_id \
+                    and not any(store_id in ids_of(m, i) for m, i in out):
+                # fork: the host row that claims this store row sits behind host rows mapped to LATER store
+                # rows (the host replayed newer copies of them), so the chunk can never emit it in store order
+                # and the contiguity check below cut every leaf to nothing (sessions wedged for hours with
+                # "cannot form a contiguous stored prefix" / the old retained-occurrence label). Read this row
+                # from its stored bytes here, at its store position; the host row stays input but no longer
+                # claims it. Duplicated text in one summary, never a lost row.
+                stored_row = self._store_complete_messages([row])[0]
+                if not take(stored_row, [store_id]):
+                    complete = False
+                    break
+                rehydrated[store_id] = stored_row
+                dependent = dependent and role not in ("user", "system")
                 continue
             if store_id in taken or store_id in passive:
                 dependent = dependent and role not in ("user", "system")
@@ -387,7 +407,10 @@ class StoreCompleteMixin:
             out = out[:next(i for i, (m, ids) in enumerate(out) if any(s > hole for s in ids_of(m, ids)))]
             complete = False
             if not out:
-                self._store_complete_empty_reason = "leaf input cannot form a contiguous stored prefix"
+                hole_row = next((row for row in rows if int(row["store_id"]) == hole), {})
+                self._store_complete_empty_reason = (  # fork: name the row the leaf could not account for
+                    "leaf input cannot form a contiguous stored prefix (hole=%d role=%s frontier=%d last=%d)"
+                    % (hole, hole_row.get("role"), frontier, last))
         if copy_proofs and not any(ids_of(m, ids) for m, ids in out):
             return self._store_complete_input(chunk, given_claims, full_map, view, raw_chunk, frontier, carry,
                                               budget, accounted_ids, scale=scale, scanned=(rows, truncated), copy_lookup=({}, set()))

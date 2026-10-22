@@ -1,0 +1,4 @@
+# file: /home/jun/code/lcm-x/sqlite_util.py
+# hypothesis_version: 6.141.1
+
+[0.0, 1.0, '"', "'", 'COMMIT', 'PRAGMA busy_timeout', 'ROLLBACK', '_T', '_lcm_real', '_lcm_trace', 'locked', 'sqlite_errorcode', 'sqlite_errorname']

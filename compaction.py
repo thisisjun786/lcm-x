@@ -882,6 +882,8 @@ class CompactionMixin:
                 if reason == empty_reason:
                     reason = empty_reason.split(" (", 1)[0]
                 empty_input = " empty_input=contiguity"
+                if empty_reason.startswith("leaf input cannot form a contiguous stored prefix ("):
+                    empty_input += "," + empty_reason.split(" (", 1)[1].rstrip(")").replace(" ", ",")
                 if empty_reason.startswith("leaf input has no stored source rows ("):
                     empty_input = " empty_input=no_source,rows:" + empty_reason.rsplit("=", 1)[1][:-1]
             blocked = (getattr(self, "_store_complete_blocked", None)

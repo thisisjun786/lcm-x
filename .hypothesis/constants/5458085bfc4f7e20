@@ -1,0 +1,4 @@
+# file: /home/jun/code/lcm-x/bench/instruments/reliability/controls.py
+# hypothesis_version: 6.141.1
+
+['*', '47bd28e7', 'B1', 'B2', 'B3', 'B6', 'FAIL', 'PASS', 'PC-1', 'PC-2', 'PC-3', 'acp-process', 'ae1fb16d', 'all', 'bars', 'cell', 'cells', 'expect', 'failed_bars', 'host', 'hosts', 'p8-control/archived', 'p8-control/none', 'plugin_ref', 'ref-0.21.5', 'refs', 'rs34-0.21.5', 'upstream-main', 'upstream-uid', 'v0.24.2', 'verdict']

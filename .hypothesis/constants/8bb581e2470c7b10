@@ -1,0 +1,4 @@
+# file: /home/jun/code/lcm-x/bench/instruments/compaction_probe/bgprep/replay.py
+# hypothesis_version: 6.141.1
+
+[0.75, 180, 400, 2000, 60000, 100000, 'Earlier turns ', 'LCM_', 'a', 'alpha', 'assistant', 'beta', 'bgprep', 'bgprep-v1', 'config', 'config.json', 'content', 'delta', 'drained', 'engine', 'enqueue_attempts', 'epsilon', 'escalation', 'eval', 'exception_type', 'gamma', 'hermes_lcm', 'hermes_lcm.', 'hermes_lcm.tokens', 'home', 'jobs_enqueued', 'lcm-leaf-prep', 'lcm.db', 'leaf_compactions', 'leaf_prep', 'on', 'post-turn', 'pre-response', 'probes.jsonl', 'promotion_lookups', 'promotions', 'raw.json', 'result', 'role', 'snapshot.db', 'timestamp', 'user', 'wall_s', 'worker_constructions', 'worker_starts', 'worker_summary_calls', 'workload.json']

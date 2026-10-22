@@ -1,0 +1,4 @@
+# file: /home/jun/code/lcm-x/message_patterns.py
+# hypothesis_version: 6.141.1
+
+[0.05, 'pattern', 'timeout']

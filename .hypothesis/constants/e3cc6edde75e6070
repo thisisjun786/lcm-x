@@ -1,0 +1,4 @@
+# file: /home/jun/code/lcm-x/schema_families.py
+# hypothesis_version: 6.141.1
+
+['embedding', 'embeddings_v1', 'lcm_embedding', 'lcm_embedding_binary', 'lcm_embedding_meta', 'malformed index', 'malformed table', 'missing object', 'v0.20.0']

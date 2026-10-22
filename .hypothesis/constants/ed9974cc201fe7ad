@@ -1,0 +1,4 @@
+# file: /home/jun/code/lcm-x/retrieval_core.py
+# hypothesis_version: 6.141.1
+
+[0.0, 0.001, 0.35, 0.5, 0.65, 1.0, 2.0, 3600.0, 200, 300, 500, 1000, ',', '-inf', '?', 'DAG setup', 'LCMEngine', 'PRAGMA query_only=ON', '_alternates', '_conn', '_directness_score', '_final_score', '_sort_directness', '_sort_rank', '_sort_ts', '_supports_pooling', 'char_end', 'char_start', 'chunk', 'chunk lookup', 'chunk_id', 'chunk_index', 'chunk_span', 'connection setup', 'content', 'content_offset', 'conversation_id', 'database connection', 'depth', 'earliest_at', 'error', 'expand_hint', 'fired', 'from_current_session', 'fts', 'high', 'hit', 'inf', 'kind', 'latest_at', 'lock', 'low', 'medium', 'message', 'message_excerpt', 'mode', 'node', 'node lookup', 'node_id', 'noise', 'position', 'ranks', 'raw', 'retired', 'role', 'rrf_score', 'search_rank', 'session_id', 'snippet', 'source', 'store', 'store_id', 'summary', 'timeout', 'timeout_stage', 'timestamp', 'token_count', 'type', 'users']

@@ -1,0 +1,4 @@
+# file: /home/jun/code/lcm-x/benchmarking/policies.py
+# hypothesis_version: 6.141.1
+
+[0.3, 0.55, 0.75, 300, 20000, 24000, 128000, 272000, '#', '\'"', '.json', '1', '2', ':', 'baseline_272k', 'codex_spark_context', 'false', 'no', 'none', 'null', 'off', 'on', 'pressure_smoke', 'true', 'utf-8', 'yes', '~']

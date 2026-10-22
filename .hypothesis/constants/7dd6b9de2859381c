@@ -1,0 +1,4 @@
+# file: /home/jun/code/lcm-x/bench/instruments/reliability/scorers/dupes.py
+# hypothesis_version: 6.141.1
+
+[0.5, 1.0, 'after_compaction', 'burst_rows_any_time', 'bursts', 'first_compaction_ts', 'first_store_id', 'last_store_id', 'messages_total', 'per_session', 'rows', 'session_id', 'sessions']

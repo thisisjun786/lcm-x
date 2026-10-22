@@ -1,0 +1,4 @@
+# file: /home/jun/code/lcm-x/benchmarking/report.py
+# hypothesis_version: 6.141.1
+
+[0.0, 0.3, 0.7, 1.0, 5.0, 20.0, 100.0, '+00:00', '1', '2', 'Z', 'active_canary_recall', 'benchmark_version', 'compaction_attempts', 'compression_count', 'fixture_suite', 'fixtures', 'generated_at_utc', 'metric_summary', 'metrics', 'model', 'name', 'notes', 'policies', 'policy_comparison', 'policy_key', 'policy_name', 'policy_settings', 'policy_version', 'policy_versions', 'provider', 'runs', 'schema_version', 'score', 'seconds', 'summary_level_runs', 'tags', 'total_canaries', 'total_failures', 'utf-8', 'value', 'w']

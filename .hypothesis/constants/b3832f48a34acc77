@@ -1,0 +1,4 @@
+# file: /home/jun/code/lcm-x/chunking.py
+# hypothesis_version: 6.141.1
+
+[600, 32000, '.!?', 'assistant', 'content', 'conversational', 'full', 'heads', 'role', 'store_id', 'tool', 'user']

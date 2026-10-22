@@ -1,0 +1,4 @@
+# file: /home/jun/code/lcm-x/bench/instruments/reliability/ci.py
+# hypothesis_version: 6.141.1
+
+['+', '-', '--depth', '--detach', '--host', '--open-issues', '--out', '--python', '--root', '-C', '-e', '-p', '-q', '/', '1', 'B9', 'ERROR', 'FAIL', 'FETCH_HEAD', 'UNSUPPORTED', '__main__', 'acp-trailing', 'all', 'baseline', 'bin', 'cancel-retry', 'cell', 'checkout', 'cmd', 'crash-', 'duplicate', 'empty result set', 'failed_bars', 'fetch', 'gate', 'git', 'hermes_version', 'host', 'hosts', 'hosts.ci.json', 'id', 'in-place', 'in-process', 'init', 'install', 'lcm-tool-mid-turn', 'long-80', 'missing', 'parallel-tool-group', 'pins', 'pip', 'plugin_sha', 'preflight-continue', 'prep', 'publication-failure', 'python', 'python_version', 'results', 'rotation', 'sha', 'sole-user-tool-loop', 'src', 'survival-fit', 'targets', 'transport', 'unexpected', 'uv', 'venv', 'verdict', 'window-1m']

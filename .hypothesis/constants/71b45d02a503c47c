@@ -1,0 +1,4 @@
+# file: /home/jun/code/lcm-x/reset_state.py
+# hypothesis_version: 6.141.1
+
+[0.0, 'action', 'idle', 'none', 'not run', 'reason']

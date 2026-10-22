@@ -1,0 +1,4 @@
+# file: /home/jun/code/lcm-x/bench/instruments/reliability/scorers/host_parity.py
+# hypothesis_version: 6.141.1
+
+[200, ', NULL, NULL', '[]', 'expected', 'host', 'host_row_id', 'host_row_ids', 'ids', 'keys', 'licensed', 'merges', 'message_uid', 'n', 'parts', 'records', 'rows', 'store_ids', 'stored', 'tag', 'tags', 'unavailable', 'user']

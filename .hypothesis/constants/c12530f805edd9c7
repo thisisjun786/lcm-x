@@ -1,0 +1,4 @@
+# file: /home/jun/code/lcm-x/teams/connector.py
+# hypothesis_version: 6.141.1
+
+[',', '.', ':', 'audit.read', 'backup.status', 'collections.archive', 'collections.create', 'conflict', 'credential rejected', 'delete', 'destroy', 'destructive verb', 'handler failed', 'invalid_request', 'memberships.grant', 'memberships.revoke', 'migration.status', 'not_implemented', 'ok', 'principals.archive', 'principals.provision', 'principals.suspend', 'purge', 'review_scope.close', 'review_scope.open', 'store unavailable', 'teams.disable', 'teams.enable', 'teams.status', 'unauthenticated', 'unauthorized', 'unavailable', 'unknown capability', 'utf-8']

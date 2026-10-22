@@ -1,0 +1,4 @@
+# file: /home/jun/code/lcm-x/diagnostics.py
+# hypothesis_version: 6.141.1
+
+['.hermes', '; ', 'LCM_HERMES_BASE_DIR', '_hermes_home', 'action', 'backup-first cleanup', 'check', 'cleanup_candidates', 'compaction_progress', 'config_validation', 'context_pressure', 'count', 'count_lost', 'database_integrity', 'db_path', 'detail', 'embeddings_enabled', 'empty_lifecycle_rows', 'ever_shortened', 'exit_fit:', 'fail', 'fts_index_sync', 'heartbeat_noise_rows', 'inactive_process', 'inspect', 'last_cause', 'last_reason', 'last_shortened', 'lcm.db', 'nodes_fts_integrity', 'operator_action', 'orphaned_dag_nodes', 'payload_storage', 'projected_count', 'rationale', 'safe/ignore', 'schema_core_tables', 'sqlite_storage', 'state.db', 'state_db_checked', 'state_db_error', 'status', 'summary_quality', 'survival_fit', 'unchecked', 'unknown', 'warn', 'warning_only']

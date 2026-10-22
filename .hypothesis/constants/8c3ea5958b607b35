@@ -1,0 +1,4 @@
+# file: /home/jun/code/lcm-x/bench/instruments/reliability/scorers/summary.py
+# hypothesis_version: 6.141.1
+
+['T', 'by_depth_source', 'compacted', 'compaction', 'compression_status', 'crash', 'depth0_nodes', 'depth0_sequence', 'event', 'final', 'host_commits', 'host_native', 'lcm_published', 'logged', 'min_compactions', 'non_growing_passes', 'ok', 'phase', 'published', 'session_prefix', 'total', 'turn', 'turn_end']

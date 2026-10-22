@@ -1,0 +1,4 @@
+# file: /home/jun/code/lcm-x/access_context/inventory.py
+# hypothesis_version: 6.141.1
+
+['-', '.py', ':', 'InventoryEntry', 'InventoryHook', 'admin', 'admin_only', 'callbacks', 'category', 'content', 'count', 'cron', 'discloses', 'entry_point', 'existence', 'expansion', 'handle', 'hook', 'id', 'ingress', 'inventory is empty', 'inventory.json', 'lcm_', 'maintenance', 'module', 'none_required', 'notes', 'owner_only', 'plugin.yaml', 'provides_tools:', 'ranking', 'read_scoped', 'reason', 'required', 'retrieval', 'sessions', 'sites', 'utf-8', 'write_scoped', 'writes']

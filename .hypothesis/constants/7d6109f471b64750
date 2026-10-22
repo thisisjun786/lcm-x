@@ -1,0 +1,4 @@
+# file: /home/jun/code/lcm-x/bench/instruments/reliability/scorers/multiset.py
+# hypothesis_version: 6.141.1
+
+[20000, 'FAIL', 'INCONCLUSIVE', 'NFC', 'PASS', '\\s+', 'as_parts', 'assistant', 'copies', 'deficit_rows', 'distinct_keys', 'duplicated', 'duplicated_keys', 'expected', 'expected_items', 'extra', 'host', 'host_merge_record', 'host_parity_licensed', 'host_row_id', 'host_row_ids', 'ids', 'instrument', 'licensed', 'merges', 'missing', 'missing_keys', 'multiset-v1', 'n', 'parts', 'phase-c-multiset-v2', 'preview', 'provenance', 'reason', 'role', 'sha256', 'split_keys', 'split_match', 'store_ids', 'stored', 'surplus_rows', 'tags', 'transcript_index', 'user', 'uses', 'verdict']

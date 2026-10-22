@@ -1,0 +1,4 @@
+# file: /home/jun/code/lcm-x/embedding_maintenance.py
+# hypothesis_version: 6.141.1
+
+['/', '; ', 'available', 'chunks', 'circuit_open', 'detail', 'embedded', 'embedding_provider', 'error', 'failed', 'fast-embed', 'fastembed', 'lease_held', 'no_profile', 'ollama', 'ollama_base_url', 'privacy_withheld', 'process_exit', 'provider_unavailable', 'reason', 'selected', 'skipped', 'status', 'stop_reason', 'stopped', 'summaries']

@@ -1,0 +1,4 @@
+# file: /home/jun/code/lcm-x/benchmarking/steady_state.py
+# hypothesis_version: 6.141.1
+
+[0.0, 0.99, 100.0, 1000.0, 200, 1000, 4000, 100000, 100000000, '^HEARTBEAT', '_conn', '_dag', '_lifecycle', '_store', 'api_key', 'assistant', 'baseline', 'bearer_token', 'benchmark', 'benchmark-model', 'content', 'history_sizes', 'ignore_patterns', 'iterations', 'password_assignment', 'private_key', 'role', 'samples', 'sensitive_patterns', 'user']

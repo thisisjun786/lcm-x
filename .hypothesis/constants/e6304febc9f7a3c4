@@ -1,0 +1,4 @@
+# file: /home/jun/code/lcm-x/model_routing.py
+# hypothesis_version: 6.141.1
+
+['(task default)', '/', ':', 'cerebras', 'custom:', 'effort', 'enabled', 'model', 'none', 'provider', 'reasoning_config']

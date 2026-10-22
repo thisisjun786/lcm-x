@@ -1,0 +1,4 @@
+# file: /home/jun/code/lcm-x/bench/instruments/reliability/acp_driver.py
+# hypothesis_version: 6.141.1
+
+[b'\n', 0.02, 5.0, -32601, 300, 1024, ',', '0.1.0', '2.0', ':', 'ACP response timeout', 'ab', 'agent_message_chunk', 'child_rows_at_detect', 'child_session_id', 'clientCapabilities', 'clientInfo', 'code', 'content', 'cwd', 'error', 'id', 'initialize', 'jsonrpc', 'kill_monotonic_ns', 'killed', 'lcmx-reliability-r2', 'mcpServers', 'message', 'method', 'missed_rotations', 'name', 'params', 'parent_session_id', 'prompt', 'protocolVersion', 'result', 'rotation-killer', 'session/load', 'session/new', 'session/prompt', 'session/update', 'sessionId', 'sessionUpdate', 'session_update', 'stopReason', 'text', 'type', 'update', 'utf-8', 'version']

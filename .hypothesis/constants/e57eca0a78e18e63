@@ -1,0 +1,4 @@
+# file: /home/jun/code/lcm-x/benchmarking/h5_state_semantic_replay.py
+# hypothesis_version: 6.141.1
+
+[0.0, 1.0, 30.0, 100.0, '+', '-', '--db-dir', '--h1-artifacts', '--h31-artifacts', '--latency-sample', '--out', '--quotas', '--run-root', '--targets', '/', 'VOYAGE_API_KEY', 'W3A-state-sweep.json', '__main__', 'admitted', 'bucket', 'dataset_name', 'dataset_revision', 'db_dir', 'delivered_recall', 'domain', 'elapsed_s', 'golden_gate', 'h5-targets.json', 'harness_commit', 'ingest_config_digest', 'knob', 'label', 'latency', 'loss8_changed_qids', 'loss8_unchanged', 'old-rescore', 'p95_ms', 'passed', 'pool_cases', 'pool_recovery', 'preserved', 'preserved_universe', 'qid', 'quotas', 'recovered', 'seed_split', 'state_id', 'state_semantic_quota', 'sweep', 'targets_manifest', 'tier', 'total', 'unique_query_embeds', 'voyage', 'voyage-4']

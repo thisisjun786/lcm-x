@@ -1,0 +1,4 @@
+# file: /home/jun/code/lcm-x/bench/instruments/reliability/scorers/drain.py
+# hypothesis_version: 6.141.1
+
+[10.0, 'D1', 'D2', 'D3', 'D4', 'T', 'calls', 'compacted', 'compactions', 'counters', 'drain', 'error', 'errored_calls', 'event', 'faults', 'faults-fired.jsonl', 'final', 'first_shrink_pass', 'first_two', 'fixture', 'fixture.jsonl', 'forget_host_rows', 'hold_seconds', 'host_native', 'host_prompt', 'host_rows_summarized', 'in', 'in_place', 'kind', 'max_secs_no_host_row', 'out', 'over_hold', 'phase', 'phase1_compactions', 'phase2_compactions', 'phase2_other_calls', 'phase2_turn', 'plateau_compactions', 'plateau_turns', 'rows', 'rows_covered', 'secs', 'session', 'session_prefix', 'status', 'transcript.jsonl', 'turn', 'turn_end', 'turns']

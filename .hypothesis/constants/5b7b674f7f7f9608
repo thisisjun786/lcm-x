@@ -1,0 +1,4 @@
+# file: /home/jun/code/lcm-x/benchmarking/replay.py
+# hypothesis_version: 6.141.1
+
+[0.0, 1.0, 1000, 100000, '-', '-._', 'Preserved canaries:', '[^A-Za-z0-9_.-]+', '__init__.py', 'benchmark', 'benchmark-model', 'content', 'dag_nodes', 'hermes-home', 'hermes_lcm', 'lcm_expand', 'lcm_grep', 'limit', 'max_tokens', 'metrics.json', 'query', 'replay', 'results', 'snippet', 'store_id', 'store_messages', 'summary', 'summary_failure_mode', 'summary_level', 'utf-8']

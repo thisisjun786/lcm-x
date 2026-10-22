@@ -1,0 +1,4 @@
+# file: /home/jun/code/lcm-x/access_context/fixtures.py
+# hypothesis_version: 6.141.1
+
+['*.json', ', ', 'access_context_v1', 'context', 'contract_revision', 'delegation', 'derivation', 'description', 'fixtures', 'negative', 'positive', 'revocation', 'tests', 'utf-8', 'v1']

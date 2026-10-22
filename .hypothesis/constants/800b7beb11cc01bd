@@ -1,0 +1,4 @@
+# file: /home/jun/code/lcm-x/bench/instruments/compaction_probe/bgprep/scoring.py
+# hypothesis_version: 6.141.1
+
+[0.9, 1.0, 'active_identity', 'active_tail_ids', 'active_view', 'activity', 'coverage', 'covered_in_active', 'crossing', 'crossings', 'dangling_sources', 'denominator', 'duplicate_coverage', 'duplicate_ids', 'duplicate_stored', 'duplicate_tail', 'enqueue_attempts', 'events', 'expected', 'facts_kept', 'frontier', 'identity', 'integrity', 'jobs_enqueued', 'leaf_compactions', 'leaf_order_preserved', 'leaf_sources', 'lost', 'lost_ids', 'missing_rows', 'numerator', 'off_quiet', 'p90_s', 'positive_control', 'probes', 'promoted', 'promotion', 'promotion_lookups', 'promotions', 'rate', 'reason', 'rows', 'store_id', 'tail_order_preserved', 'turn', 'turns', 'value', 'visible_wait_s', 'wait', 'waited_definition', 'waited_turn_share', 'waited_turns', 'worker_constructions', 'worker_starts', 'worker_summary_calls']

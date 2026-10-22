@@ -1,0 +1,4 @@
+# file: /home/jun/code/lcm-x/bench/instruments/reliability/scorers/tool_calls.py
+# hypothesis_version: 6.141.1
+
+['args', 'arguments', 'assistant', 'call', 'calls', 'cancel', 'chars', 'chat', 'end', 'ended', 'expect', 'expected', 'failed', 'failures', 'function', 'gaps', 'host_wire_notice', 'id', 'kind', 'loose', 'malformed_tool_calls', 'min_chars', 'name', 'notice_sha256', 'ok', 'result_sha256', 'sha', 'tool', 'tool_call', 'tool_dispatch', 'tool_issues', 'tool_items', 'tool_missing', 'tool_missing_rows', 'tool_seen', 'tool_surplus', 'tool_surplus_rows', 'wire_notices', '{}']

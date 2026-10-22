@@ -1,0 +1,4 @@
+# file: /home/jun/code/lcm-x/bench/instruments/reliability/scorers/cli.py
+# hypothesis_version: 6.141.1
+
+['--cell-dir', '--db', '--gauntlet-run', '--out', '-shm', '-wal', 'INCONCLUSIVE', '__main__', 'assistant', 'cell.json', 'content', 'db', 'dupes', 'duplicated', 'extra', 'input_sha256', 'material/turns.jsonl', 'message', 'missing', 'multiset', 'per_session', 'probes.jsonl', 'prompt', 'question', 'raw_answer', 'reason', 'results.jsonl', 'text', 'user', 'utf-8', 'verdict']
