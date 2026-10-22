@@ -439,6 +439,7 @@ OBSERVED_ATTRIBUTES = (
     "_store_complete_blocked",
     "_store_complete_copy_exclusion_proofs",
     "_store_complete_cut",
+    "_store_complete_empty_reason",
     "_store_complete_excluded",
     "_stored_publication_filter_exclusions",
     "_stub_first_exit",
