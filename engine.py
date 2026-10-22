@@ -6603,9 +6603,11 @@ class LCMEngine(
         seen = Counter(m.get("message_uid") for m in messages if isinstance(m, dict))
         # One host row per uid only: a uid shown twice is ambiguous (which occurrence is the stored one?),
         # so those rows keep today's path.
+        # Only rows the host sent WITHOUT a timestamp: a stamped row is #436's to decide (stamp + payload,
+        # #1403 occurrence rules); the gap this closes is exactly the stamp the gateway strips.
         wanted = {idx: m.get("message_uid") for idx, m in enumerate(messages)
                   if idx >= cursor and isinstance(m, dict) and _valid_uid(m.get("message_uid"))
-                  and seen[m.get("message_uid")] == 1}
+                  and seen[m.get("message_uid")] == 1 and m.get("timestamp") is None}
         if not wanted:
             return set()
         lineage, _problem = self._host_uid_lineage_key()

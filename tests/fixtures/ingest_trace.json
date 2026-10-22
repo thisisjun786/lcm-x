@@ -23415,6 +23415,9 @@
 "state-before sha12/len=0bd7a4c0f225/8490",
 "store backfill_observed_at_many [[[]],{}]",
 "store result backfill_observed_at_many 0",
+"store host_uid_bindings_for [[\"30d40ea85d1da1e4:S\",[\"host-uid-new\"],[\"canonical\",\"version\"]],{}]",
+"sql _store \"SELECT 1 FROM sqlite_master WHERE type='table' AND name='host_uid_bindings'\"",
+"store result host_uid_bindings_for {}",
 "log [\"hermes_lcm.engine\",\"DEBUG\",\"Ingest: session=%s cursor=%d incoming=%d\",[\"S\",0,1]]",
 "store has_session_messages [[\"S\"],{}]",
 "sql _store \"SELECT EXISTS(SELECT 1 FROM messages WHERE session_id = 'S')\"",
@@ -23510,7 +23513,7 @@
 "next-aliases {\"inputs\":[[0]],\"output-is-input\":false,\"outputs\":[[]]}",
 "next-state sha12/len=0c342aeed6fe/9115",
 "cold-return [{\"content\":\"fresh\",\"message_uid\":\"host-uid-new\",\"role\":\"user\"}]",
-"cold-state sha12/len=b7631920e19f/9412"
+"cold-state sha12/len=da1ded9595df/9158"
 ],
 "uid-bindings-new-occurrence": [
 "input-before sha12/len=4ae15669f985/371",
