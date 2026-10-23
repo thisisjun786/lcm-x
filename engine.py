@@ -6632,6 +6632,35 @@ class LCMEngine(
                 out.add(idx)
         return out
 
+    def _fork_scaffold_replayed_indexes(self, messages, cursor: int) -> set:
+        """fork: indexes >= ``cursor`` holding LCM's own pure summary row (``[Recent Summary ...]``, verified
+        part by part against this session's DAG) whose exact bytes and host stamp are already stored for this
+        session lineage. Such a row is the summary LCM rendered into an earlier boundary and the host now
+        replays on every resume; the identity anchor gives scaffold rows no identity, so without this check
+        the same 57k-char row was stored again on each resume (27 copies in one session). A summary row with
+        new bytes or no stamp keeps today's path (stored as content)."""
+        wanted: dict = {}
+        for idx in range(max(0, cursor), len(messages)):
+            message = messages[idx]
+            if not isinstance(message, dict) or message.get("role") != "user":
+                continue
+            content = message.get("content")  # cheap shape test first: most user rows are not summaries
+            if not isinstance(content, str) or self._LCM_SUMMARY_PART_HEADER_RE.match(content) is None:
+                continue
+            stamp = _normalize_observed_at(message.get("timestamp"))
+            if stamp is None or not self._is_verified_replay_scaffold_message(message):
+                continue
+            wanted[idx] = stamp
+        if not wanted or not self._session_id:
+            return set()
+        rows = self._store.find_rows_by_observed_at(
+            str(self._conversation_id or ""), [str(self._session_id), *self._identity_anchor_chain()],
+            sorted(set(wanted.values())))
+        stored = {(float(row["observed_at"]), str(row.get("content") or "")) for row in rows
+                  if row.get("role") == "user" and row.get("observed_at") is not None}
+        return {idx for idx, stamp in wanted.items()
+                if (stamp, normalize_content_value(messages[idx].get("content")) or "") in stored}
+
     def _ingest_messages(
         self,
         messages: List[Dict[str, Any]],
@@ -6927,6 +6956,15 @@ class LCMEngine(
             anchored_replay_indexes = set(anchored_replay_indexes) | uid_replays
             logger.info("LCM fork: %d host rows recognised as replays by message_uid (no stamp): session=%s",
                         len(uid_replays), self._session_id)
+        try:
+            scaffold_replays = self._fork_scaffold_replayed_indexes(messages, cursor) - set(anchored_replay_indexes)
+        except Exception as exc:
+            logger.warning("LCM fork summary-replay check failed (%s); ingest unchanged", type(exc).__name__)
+            scaffold_replays = set()
+        if scaffold_replays:
+            anchored_replay_indexes = set(anchored_replay_indexes) | scaffold_replays
+            logger.info("LCM fork: %d replayed LCM summary rows already stored, not stored again: session=%s",
+                        len(scaffold_replays), self._session_id)
         anchor_remainders: dict[int, Any] = {}
         fresh_replay_messages = replay_messages  # #772: the host's rows, before any cached copy is spliced in
         if cursor > 0:
