@@ -173,6 +173,13 @@ from .frontier_state import FrontierState
 from . import tools as lcm_tools
 
 logger = logging.getLogger(__name__)
+# fork: a host row that carries a message_uid LCM itself minted for this session root (kind='engine') is LCM's
+# own emission: its summary head is not content. A cold bind whose commit proof no longer binds (a host move that
+# changed hermes_home, 10-25) stored such a head as a raw row above the frontier; the in-order store mapper tied
+# the host's head to that copy, every later host row went unmapped, and compaction stopped on "unresolved retained
+# occurrence ... kind=shown". LCM_FORK_OWN_SUMMARY_GUARD=off restores the old path.
+_FORK_NEVER_STORE_OWN_SUMMARY = os.environ.get("LCM_FORK_OWN_SUMMARY_GUARD", "on").strip().lower() not in (
+    "0", "off", "false", "no")
 _NATIVE_RECOVERY_WARNING_LOGGED = False
 
 
@@ -6640,6 +6647,7 @@ class LCMEngine(
         the same 57k-char row was stored again on each resume (27 copies in one session). A summary row with
         new bytes or no stamp keeps today's path (stored as content)."""
         wanted: dict = {}
+        own: set = set()
         for idx in range(max(0, cursor), len(messages)):
             message = messages[idx]
             if not isinstance(message, dict) or message.get("role") != "user":
@@ -6647,19 +6655,54 @@ class LCMEngine(
             content = message.get("content")  # cheap shape test first: most user rows are not summaries
             if not isinstance(content, str) or self._LCM_SUMMARY_PART_HEADER_RE.match(content) is None:
                 continue
+            if _FORK_NEVER_STORE_OWN_SUMMARY and self._fork_is_own_emission(message):
+                own.add(idx)  # LCM's own emitted head (pure summary, or a carrier whose user row is stored)
+                continue
             stamp = _normalize_observed_at(message.get("timestamp"))
             if stamp is None or not self._is_verified_replay_scaffold_message(message):
                 continue
             wanted[idx] = stamp
         if not wanted or not self._session_id:
-            return set()
+            return own
         rows = self._store.find_rows_by_observed_at(
             str(self._conversation_id or ""), [str(self._session_id), *self._identity_anchor_chain()],
             sorted(set(wanted.values())))
         stored = {(float(row["observed_at"]), str(row.get("content") or "")) for row in rows
                   if row.get("role") == "user" and row.get("observed_at") is not None}
-        return {idx for idx, stamp in wanted.items()
-                if (stamp, normalize_content_value(messages[idx].get("content")) or "") in stored}
+        return own | {idx for idx, stamp in wanted.items()
+                      if (stamp, normalize_content_value(messages[idx].get("content")) or "") in stored}
+
+    def _fork_is_own_emission(self, message) -> bool:
+        """fork: ``message`` heads with a DAG-verified summary of this session AND carries a ``message_uid`` that
+        LCM minted for this session's root (``host_uid_bindings`` kind ``engine``, any home tag: a host move
+        changes the tag, not the root). Then it is LCM's own emitted row, and either a pure summary (its text is
+        the nodes) or a carrier whose user row is already stored for the lineage (byte for byte up to trailing
+        whitespace). A user's own pasted summary has no engine uid and stays content; a carrier whose user row is
+        not stored yet stays on today's path, so nothing the user said is dropped."""
+        uid = message.get("message_uid")
+        content = message.get("content")
+        if not isinstance(uid, str) or not uid or not isinstance(content, str) or not self._session_id:
+            return False
+        end = self._verified_lcm_summary_prefix_end(content)
+        if end is None:
+            return False
+        lineage = self._host_uid_lineage_key()[0]
+        root = lineage.split(":", 1)[1] if lineage and ":" in lineage else str(self._session_id)
+        if self._store._conn.execute(
+                "SELECT 1 FROM host_uid_bindings WHERE uid = ? AND kind = 'engine' AND lineage_key LIKE ? LIMIT 1",
+                (uid, "%:" + root)).fetchone() is None:
+            return False
+        if not content[end:].strip():
+            return True
+        rest = self._generated_context_carrier_remainder(message)
+        if rest is None:
+            return False
+        rest = rest.rstrip()
+        sessions = [str(self._session_id), *self._identity_anchor_chain()]
+        rows = self._store._conn.execute(
+            f"SELECT content FROM messages WHERE role = 'user' AND session_id IN ({','.join('?' * len(sessions))}) "
+            "AND substr(content, 1, ?) = ? LIMIT 8", [*sessions, len(rest), rest]).fetchall()
+        return any(str(row[0] or "").rstrip() == rest for row in rows)
 
     def _ingest_messages(
         self,
