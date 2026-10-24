@@ -32,6 +32,13 @@ from .message_analysis import _tool_call_id
 from .reconcile import _has_lossy_redacted_identity
 from .tokens import count_message_tokens
 
+import os as _os
+
+# fork: opt-in (LCM_FORK_COMPOSITE_REHYDRATE=on). With it on, 4 #821/recognition-receipt tests change (the carrier stops claiming
+# its constituents); kept off until that tradeoff is decided.
+_FORK_COMPOSITE_REHYDRATE = _os.environ.get("LCM_FORK_COMPOSITE_REHYDRATE", "off").strip().lower() in (
+    "1", "on", "true", "yes")
+
 logger = logging.getLogger(__name__)
 
 _SCAN_LIMIT = 2000  # owned rows per source page; a larger eligible backlog drains over later passes
@@ -218,6 +225,46 @@ class StoreCompleteMixin:
                                "that point is unknown; pass scheduled as drained", key, frontier, last)
         return result
 
+    def _fork_uid_pinned_occurrences(self, occurrences, view):
+        """fork: pin a view occurrence to the stored row(s) its host ``message_uid`` is canonically bound to (this
+        session root, any home tag). A pinned occurrence's key becomes ``("fork-uid", uid)`` and ``pins`` maps
+        store_id -> that key, so the matcher pairs it only with its own row. Without this, rows with an empty or
+        repeated identity (a content-less assistant turn) matched across the whole view: on the 10-25 default
+        telegram session a 07:39 empty reply "showed" a 02:18 empty reply above the frontier and every leaf
+        stopped there. Fail-open: no uid, no table, an unresolved lineage or any error leaves everything unpinned."""
+        if not occurrences or host_message_uid_mode() == "off":
+            return occurrences, {}
+        try:
+            lineage = self._host_uid_lineage_key()[0]
+            if not lineage or ":" not in lineage or not self._store._host_uid_table_exists():
+                return occurrences, {}
+            uids = sorted({u for idx, _key in occurrences
+                           if isinstance(u := view[idx].get("message_uid"), str) and u})
+            root = lineage.split(":", 1)[1]
+            bound: dict = {}
+            for start in range(0, len(uids), 500):
+                chunk = uids[start:start + 500]
+                for uid, store_id in self._store._conn.execute(
+                        "SELECT uid, store_id FROM host_uid_bindings WHERE kind = 'canonical' AND store_id > 0 "
+                        f"AND lineage_key LIKE ? AND uid IN ({','.join('?' * len(chunk))})", ["%:" + root, *chunk]):
+                    bound.setdefault(uid, set()).add(int(store_id))
+            pins: dict = {}
+            out = []
+            for idx, key in occurrences:
+                uid = view[idx].get("message_uid")
+                rows = bound.get(uid) if isinstance(uid, str) else None
+                if rows:
+                    pinned = ("fork-uid", uid)
+                    for store_id in rows:
+                        pins.setdefault(store_id, set()).add(pinned)
+                    out.append((idx, pinned))
+                else:
+                    out.append((idx, key))
+            return out, pins
+        except Exception:
+            logger.debug("LCM fork uid occurrence pinning unavailable", exc_info=True)
+            return occurrences, {}
+
     def _store_complete_input(self, chunk, claims, full_map, view, raw_chunk, frontier, carry, budget,
                               accounted_ids=(), scale: int = 1, scanned=None, copy_lookup=None) -> Optional[list]:
         """``[(input_row, [store_id, ...]), ...]`` in store order; ``[]`` when the leaf cannot start
@@ -247,8 +294,11 @@ class StoreCompleteMixin:
         candidates = [row for row in loose if int(row["store_id"]) not in ignored | covered]
         occurrences = [(idx, self._message_replay_identity(message, strip_carrier=False))
                        for idx, message in enumerate(view) if id(message) not in full_map and not claims.get(id(message))]
+        occurrences, pins = self._fork_uid_pinned_occurrences(occurrences, view)
         self._load_host_rewrite_overrides(candidates)
-        shown = _match_occurrences(candidates, self._stored_row_forms, occurrences) if occurrences else {}
+        keys_of = (lambda row: self._stored_row_forms(row) | pins.get(int(row["store_id"]), set())) if pins \
+            else self._stored_row_forms
+        shown = _match_occurrences(candidates, keys_of, occurrences) if occurrences else {}
         blocked = set()
         for store_id, idx in shown.items():
             if id(view[idx]) in in_chunk:  # the chunk row's own text is this stored occurrence
@@ -267,7 +317,12 @@ class StoreCompleteMixin:
         # only a host row that claims exactly this one store row (a composite carrier holds its constituents'
         # text in one row and must keep claiming them together)
         single_claims = {ids[0] for message_id, ids in claims.items() if len(ids) == 1 and message_id not in full_map}
+        # fork: a composite carrier's claim (one host row holding several stored user turns), keyed by its
+        # lowest constituent; see the composite branch of the rows loop.
+        composite_claims = {min(ids): sorted(ids) for message_id, ids in claims.items()
+                            if len(ids) > 1 and message_id not in full_map}
         rehydrated: dict = {}  # fork: store_id -> the stored-bytes row that now carries it (see the rows loop)
+        pending_composite: set = set()
 
         def ids_of(message, ids) -> list:
             found = list(ids) + ([full_map[id(message)]] if id(message) in full_map else [])
@@ -332,6 +387,27 @@ class StoreCompleteMixin:
                 # "cannot form a contiguous stored prefix" / the old retained-occurrence label). Read this row
                 # from its stored bytes here, at its store position; the host row stays input but no longer
                 # claims it. Duplicated text in one summary, never a lost row.
+                stored_row = self._store_complete_messages([row])[0]
+                if not take(stored_row, [store_id]):
+                    complete = False
+                    break
+                rehydrated[store_id] = stored_row
+                dependent = dependent and role not in ("user", "system")
+                continue
+            if _FORK_COMPOSITE_REHYDRATE and store_id in composite_claims and store_id not in passive \
+                    and store_id not in mapped_ids and index < len(chunk) and position(chunk[index]) > store_id \
+                    and not any(store_id in ids_of(m, i) for m, i in out):
+                # fork: the composite carrier that claims this row (and later ones, with other stored rows
+                # between them) sits behind host rows mapped to LATER store rows, so the chunk cannot emit it in
+                # store order and the contiguity check cut every leaf to nothing ("cannot form a contiguous
+                # stored prefix (hole=<first constituent> role=user)", default telegram session 10-25). As the
+                # single-claim branch above does, read each constituent from its stored bytes at its own store
+                # position; the carrier stays input but no longer claims them. Duplicated text, never a lost row.
+                for constituent in composite_claims[store_id]:
+                    if constituent not in rehydrated:
+                        rehydrated[constituent] = None  # pending: taken at its own position below
+                pending_composite.update(composite_claims[store_id])
+            if store_id in pending_composite and store_id in rehydrated and rehydrated[store_id] is None:
                 stored_row = self._store_complete_messages([row])[0]
                 if not take(stored_row, [store_id]):
                     complete = False

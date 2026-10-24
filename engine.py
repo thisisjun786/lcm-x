@@ -180,6 +180,10 @@ logger = logging.getLogger(__name__)
 # occurrence ... kind=shown". LCM_FORK_OWN_SUMMARY_GUARD=off restores the old path.
 _FORK_NEVER_STORE_OWN_SUMMARY = os.environ.get("LCM_FORK_OWN_SUMMARY_GUARD", "on").strip().lower() not in (
     "0", "off", "false", "no")
+# fork: see _fork_uid_replayed_indexes. Opt-in (LCM_FORK_UID_REPLAY_STAMPED=on): with it on, 5 existing #1403/ingest-trace
+# tests change (a same-uid null copy is no longer stored); kept off until that tradeoff is decided.
+_FORK_UID_REPLAY_STAMPED = os.environ.get("LCM_FORK_UID_REPLAY_STAMPED", "off").strip().lower() in (
+    "1", "on", "true", "yes")
 _NATIVE_RECOVERY_WARNING_LOGGED = False
 
 
@@ -6612,9 +6616,16 @@ class LCMEngine(
         # so those rows keep today's path.
         # Only rows the host sent WITHOUT a timestamp: a stamped row is #436's to decide (stamp + payload,
         # #1403 occurrence rules); the gap this closes is exactly the stamp the gateway strips.
+        # fork (10-25): also a STAMPED row when the host rewrote its stamp. Hermes' compression re-persists the
+        # kept tail with fresh timestamps (one per compression), so #436 cannot match it and each compression
+        # stored the whole tail again (634 copies at 07:09 on the default telegram session); those copies then
+        # took the store mapper's in-order slots and stopped the leaf walk (raw_prefix_drained, ~160k raw
+        # tokens left). The uid is Hermes' per-row identity and the bytes must match, so this is the same
+        # occurrence. A stamped row is claimed here only when no stored copy of it has its current stamp.
+        stamped_ok = _FORK_UID_REPLAY_STAMPED
         wanted = {idx: m.get("message_uid") for idx, m in enumerate(messages)
                   if idx >= cursor and isinstance(m, dict) and _valid_uid(m.get("message_uid"))
-                  and seen[m.get("message_uid")] == 1 and m.get("timestamp") is None}
+                  and seen[m.get("message_uid")] == 1 and (m.get("timestamp") is None or stamped_ok)}
         if not wanted:
             return set()
         lineage, _problem = self._host_uid_lineage_key()
@@ -6623,6 +6634,23 @@ class LCMEngine(
         # canonical = the row first stored for this uid; version = a later stored form of the same uid
         # (the host merged an absorbed reply into it). Either proves the bytes are already stored.
         bindings = self._store.host_uid_bindings_for(lineage, set(wanted.values()), ("canonical", "version"))
+        if stamped_ok and ":" in lineage:
+            # fork: a host move changes the home tag of the lineage key, not the session root; bindings written
+            # under the old home are the same lineage (same lcm.db, same root, owner-checked below). Read them
+            # for every wanted uid: the new-home binding may name a copy that was since quarantined.
+            missing = set(wanted.values())
+            if missing:
+                root = lineage.split(":", 1)[1]
+                ids = sorted(missing)
+                for start in range(0, len(ids), 500):
+                    chunk = ids[start:start + 500]
+                    for uid, store_id, kind in self._store._conn.execute(
+                            "SELECT uid, store_id, kind FROM host_uid_bindings WHERE kind IN ('canonical', 'version') "
+                            f"AND lineage_key LIKE ? AND uid IN ({','.join('?' * len(chunk))}) ORDER BY rowid",
+                            ["%:" + root, *chunk]):
+                        pair = (int(store_id), str(kind))
+                        if pair not in bindings.setdefault(str(uid), []):
+                            bindings[str(uid)].append(pair)
         if not bindings:
             return set()
         owners = {str(self._session_id), *self._identity_anchor_chain()}
@@ -6635,8 +6663,14 @@ class LCMEngine(
                           if fetched.get(int(sid)) is not None
                           and str(fetched[int(sid)].get("session_id") or "") in owners
                           and str(fetched[int(sid)].get("role") or "") == role]
-            if candidates and self._host_uid_bytes_match(candidates, messages[idx], fetched) is not None:
-                out.add(idx)
+            if not candidates or self._host_uid_bytes_match(candidates, messages[idx], fetched) is None:
+                continue
+            stamp = _normalize_observed_at(messages[idx].get("timestamp"))
+            if stamp is not None and any(
+                    fetched[int(sid)].get("observed_at") is not None
+                    and abs(float(fetched[int(sid)]["observed_at"]) - stamp) < 1e-6 for sid in candidates):
+                continue  # same stamp: #436 decides it, as before
+            out.add(idx)
         return out
 
     def _fork_scaffold_replayed_indexes(self, messages, cursor: int) -> set:

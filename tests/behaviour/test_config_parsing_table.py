@@ -390,7 +390,8 @@ def test_key_inventory_is_complete():
     covered.update(row[0] for row in DYNAMIC_ROWS)
     covered.update({"LCM_ENABLE_SLASH_COMMAND", "LCM_DISABLED_TOOLS",
                     "LCM_ABSOLUTE_THRESHOLD_TOKENS", "LCM_HERMES_BASE_DIR", "LCM_EMBEDDING_API_KEY",
-                    "LCM_FORK_OWN_SUMMARY_GUARD"})  # fork: engine.py module flag (cold-bind summary head guard)
+                    "LCM_FORK_OWN_SUMMARY_GUARD", "LCM_FORK_UID_REPLAY_STAMPED",
+                    "LCM_FORK_COMPOSITE_REHYDRATE"})  # fork: engine.py module flag (cold-bind summary head guard)
     assert derive_environment_keys() == covered
 
 
