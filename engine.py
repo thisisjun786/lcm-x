@@ -180,10 +180,12 @@ logger = logging.getLogger(__name__)
 # occurrence ... kind=shown". LCM_FORK_OWN_SUMMARY_GUARD=off restores the old path.
 _FORK_NEVER_STORE_OWN_SUMMARY = os.environ.get("LCM_FORK_OWN_SUMMARY_GUARD", "on").strip().lower() not in (
     "0", "off", "false", "no")
-# fork: see _fork_uid_replayed_indexes. Opt-in (LCM_FORK_UID_REPLAY_STAMPED=on): with it on, 5 existing #1403/ingest-trace
-# tests change (a same-uid null copy is no longer stored); kept off until that tradeoff is decided.
-_FORK_UID_REPLAY_STAMPED = os.environ.get("LCM_FORK_UID_REPLAY_STAMPED", "off").strip().lower() in (
-    "1", "on", "true", "yes")
+# fork: see _fork_uid_replayed_indexes. On by default since 10-26 (LCM_FORK_UID_REPLAY_STAMPED=off restores the old path):
+# without it every compression re-stored the restamped tail (the default telegram session reached 20,755 rows, 2,925
+# distinct) and those copies wedged compaction. A stamped row is claimed on a canonical binding only, so the #1403
+# version-binding cases keep their old result.
+_FORK_UID_REPLAY_STAMPED = os.environ.get("LCM_FORK_UID_REPLAY_STAMPED", "on").strip().lower() not in (
+    "0", "off", "false", "no")
 _NATIVE_RECOVERY_WARNING_LOGGED = False
 
 
@@ -6634,7 +6636,7 @@ class LCMEngine(
         # canonical = the row first stored for this uid; version = a later stored form of the same uid
         # (the host merged an absorbed reply into it). Either proves the bytes are already stored.
         bindings = self._store.host_uid_bindings_for(lineage, set(wanted.values()), ("canonical", "version"))
-        if stamped_ok and ":" in lineage:
+        if stamped_ok and ":" in lineage and self._store._host_uid_table_exists():
             # fork: a host move changes the home tag of the lineage key, not the session root; bindings written
             # under the old home are the same lineage (same lcm.db, same root, owner-checked below). Read them
             # for every wanted uid: the new-home binding may name a copy that was since quarantined.
@@ -6659,8 +6661,12 @@ class LCMEngine(
         out = set()
         for idx, uid in wanted.items():
             role = str(messages[idx].get("role") or "")
-            candidates = [sid for sid, _kind in bindings.get(uid, ())
-                          if fetched.get(int(sid)) is not None
+            # fork: a STAMPED row is claimed on a canonical binding only (#1403: a version binding alone is not
+            # occurrence proof for a row the host stamped); the unstamped path keeps canonical + version.
+            stamped_row = messages[idx].get("timestamp") is not None
+            candidates = [sid for sid, kind in bindings.get(uid, ())
+                          if (kind == "canonical" or not stamped_row)
+                          and fetched.get(int(sid)) is not None
                           and str(fetched[int(sid)].get("session_id") or "") in owners
                           and str(fetched[int(sid)].get("role") or "") == role]
             if not candidates or self._host_uid_bytes_match(candidates, messages[idx], fetched) is None:

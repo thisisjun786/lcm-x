@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import re
 from collections import Counter
 from dataclasses import dataclass, field
@@ -64,6 +65,16 @@ from .store import _normalize_observed_at
 import logging
 
 logger = logging.getLogger(__name__)
+
+# fork: _get_store_id_map_for_messages leaves a host row unmapped when its uid-bound stored copy is a late re-store
+# whose in-order jump would skip stored rows the next host rows own by uid. LCM_FORK_LATE_COPY_GUARD=off restores the
+# old mapping; LCM_FORK_LATE_COPY_WINDOW bounds how many following host rows are checked.
+_FORK_LATE_COPY_GUARD = os.environ.get("LCM_FORK_LATE_COPY_GUARD", "on").strip().lower() not in (
+    "0", "off", "false", "no")
+try:
+    _FORK_LATE_COPY_WINDOW = max(1, int(os.environ.get("LCM_FORK_LATE_COPY_WINDOW", "16")))
+except ValueError:
+    _FORK_LATE_COPY_WINDOW = 16
 
 _PRESERVED_OBJECTIVE_CONTEXT_PREFIX = "[Current user objective preserved from compacted history]"
 _PRESERVED_TODO_CONTEXT_PREFIX = "[Your active task list was preserved across context compression]"
@@ -3719,6 +3730,43 @@ class ReconcileMixin:
                 probe_idx = match_idx + 1
             return matched_message_ids
 
+        uid_rows = None  # fork: {uid: {store_id}} of this lineage's bindings, loaded on the first jump
+
+        def _late_copy_jump(msg_idx: int, start_idx: int, match_idx: int) -> bool:
+            """fork: True when mapping ``messages[msg_idx]`` to ``candidates[match_idx]`` jumps the cursor past a
+            stored row that one of the next host rows OWNS by its host ``message_uid`` binding (canonical or
+            version, any home tag of this session root). That jump is the late re-stored copy shape: the turn's
+            own ingest missed this row, a later re-store wrote its only copy after its neighbours, and mapping it
+            orphaned every neighbour. Only uid proof triggers it: rows without a uid, or whose skipped rows belong
+            to no following host row, keep the old mapping (a host-moved retained occurrence, #581)."""
+            nonlocal uid_rows
+            following = [m.get("message_uid") for m in messages[msg_idx + 1:msg_idx + 1 + _FORK_LATE_COPY_WINDOW]]
+            following = [u for u in following if isinstance(u, str) and u]
+            own = messages[msg_idx].get("message_uid")
+            if not following or not isinstance(own, str) or not own:
+                return False
+            if uid_rows is None:
+                uid_rows = {}
+                try:
+                    lineage = self._host_uid_lineage_key()[0]
+                    if lineage and ":" in lineage and self._store._host_uid_table_exists():
+                        root = lineage.split(":", 1)[1]
+                        uids = sorted({u for m in messages if isinstance(u := m.get("message_uid"), str) and u})
+                        for start in range(0, len(uids), 500):
+                            part = uids[start:start + 500]
+                            for uid, store_id in self._store._conn.execute(
+                                    "SELECT uid, store_id FROM host_uid_bindings WHERE kind IN ('canonical', "
+                                    "'version') AND store_id > 0 AND lineage_key LIKE ? AND uid IN "
+                                    f"({','.join('?' * len(part))})", ["%:" + root, *part]):
+                                uid_rows.setdefault(str(uid), set()).add(int(store_id))
+                except Exception:
+                    logger.debug("LCM fork late-copy guard: bindings unavailable", exc_info=True)
+                    uid_rows = {}
+            if int(candidates[match_idx]["store_id"]) not in uid_rows.get(own, ()):
+                return False  # this row's own uid does not prove the late copy is its occurrence
+            skipped = {int(candidates[i]["store_id"]) for i in range(start_idx, match_idx)}
+            return any(uid_rows.get(u, set()) & skipped for u in following)
+
         ids_by_message_id: dict[int, int] = {}
         store_idx = 0
         for msg_idx, msg in enumerate(messages):
@@ -3768,6 +3816,14 @@ class ReconcileMixin:
                 active_surplus_skips[message_identity] = surplus - 1
                 continue
             match_idx = find_message_match_index(msg, store_idx)
+            if (match_idx is not None and match_idx > store_idx and _FORK_LATE_COPY_GUARD
+                    and _late_copy_jump(msg_idx, store_idx, match_idx)):
+                # fork: this row's only stored copy sits AFTER rows the following host rows map to (the turn's
+                # own ingest missed it and a later re-store wrote it at the end). Mapping it there jumped the
+                # in-order cursor past them, every one stayed unmapped, and the leaf stopped at the first as a
+                # "retained occurrence ... kind=shown" (default telegram session 10-25/26). Leave this row
+                # unmapped so its neighbours map in order; the late copy stays stored and is reached later.
+                continue
             if match_idx is not None:
                 ids_by_message_id[id(msg)] = candidates[match_idx]["store_id"]
                 store_idx = match_idx + 1

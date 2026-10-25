@@ -75,6 +75,7 @@ TURN_PATH_FILES = {
 # Explicit exclusions: classify every top-level Python module, not just reachable dependencies.
 NON_TURN_PATH_FILES = {
     "fork_summary_quarantine.py",  # fork: operator-run repair (scripts/fork_quarantine_summary_rows.py), never imported by the engine.
+    "fork_copy_quarantine.py",  # fork: operator-run repair (scripts/fork_quarantine_copy_rows.py), never imported by the engine.
     "adaptive_retrieval.py",  # Default-off adaptive retrieval controller.
     "answer_contract.py",  # Default-off pre-answer requirements.
     "assertion_extraction.py",  # Default-off structured extraction.

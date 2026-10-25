@@ -32,7 +32,7 @@ PAD = " alpha beta gamma delta" * 4
 def carry_mode(monkeypatch):
     monkeypatch.delenv("LCM_HOST_MESSAGE_UID", raising=False)
     monkeypatch.setattr(emit, "_host_uid_capability", True)
-    monkeypatch.setattr(lcm_engine_module, "_FORK_UID_REPLAY_STAMPED", True)  # opt-in in this commit
+    monkeypatch.setattr(lcm_engine_module, "_FORK_UID_REPLAY_STAMPED", True)  # default on since 10-26
 
 
 def _home(tmp_path, name):
@@ -125,7 +125,7 @@ def test_restamped_row_with_new_bytes_is_still_stored(tmp_path):
         again.shutdown()
 
 
-def test_stamped_check_is_off_by_default_switch(tmp_path, monkeypatch):
+def test_stamped_check_off_switch(tmp_path, monkeypatch):
     first = _engine(tmp_path)
     try:
         first.ingest(_history())
@@ -159,3 +159,15 @@ def test_uid_pins_an_empty_occurrence_to_its_own_row(tmp_path):
         assert engine._fork_uid_pinned_occurrences(unbound, [dict(view[0], message_uid="zz")])[1] == {}
     finally:
         engine.shutdown()
+
+
+
+def test_stamped_check_is_on_by_default():
+    """Read the module default in a clean interpreter (no reload of the shared engine module)."""
+    import os
+    import re
+    from pathlib import Path
+    src = (Path(lcm_engine_module.__file__).read_text())
+    line = re.search(r'_FORK_UID_REPLAY_STAMPED = os.environ.get\("LCM_FORK_UID_REPLAY_STAMPED", "(\w+)"\)', src)
+    assert line and line.group(1) == "on"
+    assert "not in (" in src[line.end():line.end() + 40]  # only an explicit off value disables it
