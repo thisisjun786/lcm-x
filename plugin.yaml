@@ -3,6 +3,12 @@ version: 0.28.0
 description: "LCM-X — Lossless Context Memory eXtension for Hermes, with a recoverable DAG-based context engine"
 author: "Voltropy / Hermes Community"
 requires_hermes: ">=0.21.3"   # the plugin API floor (ctx.register_hook); matches the catalog entry
+# tokens.py counts with tiktoken. Hermes core does not ship it, and PM builds every new
+# dependency generation from the enabled plugins' declarations, so an undeclared import
+# silently fell back to the char estimate after each update. Upper bound kept so the
+# requirement resolves against Hermes' own pinned graph.
+python_dependencies:
+  - "tiktoken>=0.7,<1"
 provides_tools:
   - lcm_grep
   - lcm_recall

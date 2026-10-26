@@ -181,7 +181,7 @@ claim that Hermes core has no persisted record of pre-compression history.
 - Python 3.11+
 - No required third-party runtime dependencies
 
-`tiktoken` is used if available; otherwise LCM falls back to character-based
+`tiktoken` is declared in `plugin.yaml` so Hermes PM installs it (fork); if it is still missing, LCM falls back to character-based
 token estimates. `regex` is used if available to apply timeouts to message ignore
 patterns; without it, message-level regex filtering is disabled with a warning
 rather than running unbounded stdlib `re` matches.

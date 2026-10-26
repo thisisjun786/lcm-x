@@ -27,6 +27,8 @@ The repository deliberately has no `pyproject.toml` or package metadata. Package
 
 The lint settings live in `ruff.toml` for the same reason. Hermes' package manager (`pm/`, after v2026.9.24) treats any plugin checkout with a `pyproject.toml` as a uv workspace member. It adds a `[project]` name to a member's `pyproject.toml` and keeps its other fields. A lint-only file has no `[project]` table, so the result has a name and no `version`, `uv lock` rejects it, and the Hermes update adds `hermes-lcm-x` to `plugins.disabled` (#631). Do not add a `pyproject.toml` back; `tests/test_issue_631_not_a_pm_member.py` guards this.
 
+Fork: `plugin.yaml` declares `python_dependencies: ["tiktoken>=0.7,<1"]`. Hermes core does not ship tiktoken and PM rebuilds the dependency environment on every update, so an undeclared tiktoken disappeared after each update and token counts silently fell back to the character estimate. The declaration makes the checkout a manifest-only PM member: PM writes that member's own `pyproject.toml` (with a version) under `plugin-deps/` and copies nothing from the checkout, so the #631 failure does not apply. The BPE file is cached under `$HERMES_HOME/cache/tiktoken` unless `TIKTOKEN_CACHE_DIR`/`DATA_GYM_CACHE_DIR` is set.
+
 ## Next packaging step
 
 Make packaging a separate implementation lane only when one of these is true:

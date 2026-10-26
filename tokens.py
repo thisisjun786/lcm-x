@@ -38,8 +38,36 @@ _encoder_generation = 0
 _ENCODER_FIRST_WAIT_S = 2.0
 
 
+def _tiktoken_cache_dir() -> str | None:
+    """A durable BPE cache under HERMES_HOME unless the operator chose one.
+
+    tiktoken's default is ``$TMPDIR/data-gym-cache``; on macOS that is a
+    per-user temp dir the OS purges, so every purge (or a new host) re-downloads
+    the ~1.7MB BPE file on the first count -- the network wait this module
+    bounds. A fixed directory keeps one download per host.
+    """
+    import os
+    from pathlib import Path
+
+    if os.environ.get("TIKTOKEN_CACHE_DIR") is not None or os.environ.get("DATA_GYM_CACHE_DIR") is not None:
+        return None  # The operator's choice (an empty value disables caching) wins.
+    home = os.environ.get("HERMES_HOME") or str(Path.home() / ".hermes")
+    target = Path(home) / "cache" / "tiktoken"
+    try:
+        target.mkdir(parents=True, exist_ok=True)
+    except OSError:
+        return None
+    return str(target)
+
+
 def _load_encoder():
     """The (possibly network-backed) tiktoken load. Patchable in tests."""
+    import os
+
+    cache_dir = _tiktoken_cache_dir()
+    if cache_dir is not None:
+        # setdefault: never overwrite a value another thread or the operator set meanwhile.
+        os.environ.setdefault("TIKTOKEN_CACHE_DIR", cache_dir)
     import tiktoken
     return tiktoken.get_encoding("cl100k_base")
 

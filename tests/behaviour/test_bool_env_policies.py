@@ -107,6 +107,8 @@ RAW_READERS = {
     "embedding_provider.py": {"probe_provider_availability", "_request", "rerank", "__init__"},
     "engine.py": {"_set_context_length", "_get_allowed_hermes_base"},
     "externalize.py": {"get_large_output_storage_dir"},
+    # Fork: path lookups (TIKTOKEN_CACHE_DIR, DATA_GYM_CACHE_DIR, HERMES_HOME), not a boolean policy.
+    "tokens.py": {"_tiktoken_cache_dir"},
 }
 
 
