@@ -50,3 +50,29 @@ Cleanup apply is separately feature-gated. Never infer permission to enable it f
   a deterministic embedding-privacy configuration fault, not load shedding. Check the
   `LCM_SENSITIVE_PATTERNS` catalog (nonempty, recognized names) and whether the registered
   vector revision matches the current posture; re-run `/lcm embed warmup` after any change.
+
+
+## UID pairing and unpaired rows
+
+Inspect `lcm_status.uid_coverage` after compaction. `unpaired_count` and `unpaired`
+identify unresolved host occurrences using only `store_id` and `uid`; the same
+identifiers appear in the compaction stop line. These rows remain active while
+other paired rows compact. Do not treat an empty audit before a compaction or
+outside its foreground binding as evidence that all rows paired.
+
+`paired_store_ids` names the mapped set and `superseded_store_ids` names older
+versions retained as raw history. Summary source-ID sets are the durable coverage
+proof. The contiguous lifecycle frontier may remain behind a later summarized
+ID when a retained gap is still open; that does not by itself mean compaction is
+wedged. Check actual before/after context lengths and tokens. A stop reporting
+`progress=none` must not be described as a successful reduction, even if a leaf
+was persisted. Do not copy message content into pairing diagnostics.
+
+`covered_store_ids`, when present, lists already-summarized sources above the
+frontier. UID-less recovery checks this set too. A shorter summary retry cannot
+claim only the stored half of a rewritten UID occurrence: that retry is refused,
+and the whole occurrence stays active for a later successful attempt.
+
+A cached background leaf is rejected when a bound host occurrence differs from
+the worker's stored input. Foreground summarization must read both forms; turning
+off legacy identity anchoring does not disable this UID provenance check.

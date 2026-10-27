@@ -1856,7 +1856,10 @@ class LCMEngine(
         an LCM no-op (for example, when request pressure is high but all
         compactable raw backlog is protected by the fresh tail).
         """
-        return self._bypass_compress_state().get("_last_compression_status", "idle")
+        status = self._bypass_compress_state().get("_last_compression_status", "idle")
+        if status == "compacted" and self._uid_coverage_status().get("context_shrank") is False:
+            return "noop"
+        return status
 
     @last_compression_status.setter
     def last_compression_status(self, value: str) -> None:
@@ -5640,6 +5643,7 @@ class LCMEngine(
             "threshold_tokens": self.threshold_tokens,
             "last_compression_status": self.last_compression_status,
             "last_compression_noop_reason": self.last_compression_noop_reason,
+            "uid_coverage": self._uid_coverage_status(),
             "last_survival_fit": dict(self._last_survival_fit) if self._last_survival_fit else None,
             "threshold_full_sweep": dict(self._last_threshold_full_sweep),
             "last_stub_first_exit": dict(self._last_stub_first_exit) if self._last_stub_first_exit else None,

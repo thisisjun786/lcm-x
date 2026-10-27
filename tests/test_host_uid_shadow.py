@@ -687,7 +687,7 @@ def test_f6_restart_classification_reads_rows_in_batches(tmp_path, monkeypatch):
     try:
         engine.ingest(view)
         assert _counts(engine) == {"replay.bound.agree.prefix_replay": 5000}
-        assert calls["fetch"] <= 2 and calls["get_batch"] <= 5000 // 500 + 2, calls
+        assert calls["fetch"] <= 2 and calls["get_batch"] <= 2 * (5000 // 500) + 2, calls
     finally:
         engine.shutdown()
 

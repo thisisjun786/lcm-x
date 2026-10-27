@@ -14,7 +14,6 @@ from __future__ import annotations
 
 import sqlite3
 
-import pytest
 
 import hermes_lcm.reconcile as reconcile_module
 from hermes_lcm.config import LCMConfig
@@ -98,20 +97,20 @@ def test_late_copy_does_not_orphan_the_following_rows(tmp_path):
         assert stored[-1]["role"] == "assistant" and stored[-1]["tool_calls"]  # the late copy is last
         mapped = _mapped(engine, turn)
         assert mapped[0] is not None
-        assert mapped[1] is None  # the late copy is left for a later pass, never jumped to
+        assert mapped[1] == stored[-1]["store_id"]  # UID identity is independent of store order
         assert all(sid is not None for sid in mapped[2:]), mapped
         assert mapped[2:] == sorted(mapped[2:])
     finally:
         engine.shutdown()
 
 
-def test_late_copy_guard_off_restores_the_old_jump(tmp_path, monkeypatch):
+def test_uid_pairing_does_not_depend_on_late_copy_guard(tmp_path, monkeypatch):
     monkeypatch.setattr(reconcile_module, "_FORK_LATE_COPY_GUARD", False)
     engine = _engine(tmp_path)
     try:
         mapped = _mapped(engine, _store_with_late_copy(engine))
-        assert mapped[1] is not None  # jumped to the late copy ...
-        assert all(sid is None for sid in mapped[2:]), mapped  # ... and orphaned everything after it
+        assert mapped[1] is not None  # UID pairing bypasses the fallback cursor
+        assert all(sid is not None for sid in mapped[2:]), mapped
     finally:
         engine.shutdown()
 

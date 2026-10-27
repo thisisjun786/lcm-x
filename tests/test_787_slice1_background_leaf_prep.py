@@ -301,7 +301,7 @@ def test_summary_carrier_with_unmapped_glued_row_rejects_prepared_chain(
     assert _isolated.counters["promoted"] == 0
 
 
-def test_rotate_restart_full_transcript_never_promotes_unread_start(
+def test_rotate_restart_promotes_only_attributable_suffix_and_retains_unread_start(
     tmp_path, provider, _isolated
 ):
     engine = _engine(tmp_path)
@@ -322,15 +322,22 @@ def test_rotate_restart_full_transcript_never_promotes_unread_start(
             _turn_end(engine, view)
         assert leaf_prep.ready_chain(engine._store.db_path, "conv", _frontier(engine))
 
+        mapped = engine._get_store_id_map_for_messages(view)
+        before = engine._store.get_session_messages(engine._session_id)
         result = engine.compress(view)
 
-        assert not _isolated.counters.get("promoted")
+        assert _isolated.counters.get("promoted")
+        assert engine.get_status()["uid_coverage"]["unpaired_count"] > 0
         output_contents = {message.get("content") for message in result}
+        claimed = {sid for ids in _leaf_sources(engine) for sid in ids}
+        assert engine._store.get_session_messages(engine._session_id) == before
         assert all(
-            message["content"] in output_contents
+            message["content"] in output_contents or mapped.get(id(message)) in claimed
             for message in view
             if str(message.get("content", "")).startswith("[T")
-        )
+        ), [(i, mapped.get(id(m)), any(str(m.get("content")) in str(r.get("content")) for r in result))
+            for i, m in enumerate(view) if str(m.get("content", "")).startswith("[T")
+            and m["content"] not in output_contents and mapped.get(id(m)) not in claimed]
     finally:
         engine.shutdown()
 
@@ -461,32 +468,27 @@ def _stored_count(engine) -> int:
     ]
 
 
-def test_a_merged_assistant_emission_inside_a_prepared_leaf_is_promoted(
+def test_an_unpaired_merged_assistant_retains_its_whole_tool_group(
     engine, provider, _isolated
 ):
     view = _emission_crossing(engine)
     _turn_end(engine, view)
-    chain = leaf_prep.ready_chain(engine._store.db_path, "conv", 0)
-    stored = _stored_count(engine)
+    assert leaf_prep.ready_chain(engine._store.db_path, "conv", 0)
+    before = engine._store.get_session_messages("S")
+    host = _merged(engine, view)
+    result = engine.compress(host, current_tokens=tokens.count_messages_tokens(view))
 
-    engine.compress(
-        _merged(engine, view), current_tokens=tokens.count_messages_tokens(view)
-    )
-
-    assert _stored_count(engine) == stored  # the merged message is no new row
-    assert _isolated.counters["promoted"] >= 1
+    assert engine._store.get_session_messages("S") == before
+    assert _isolated.counters["promoted"] == 0
+    assert engine.get_status()["uid_coverage"]["unpaired_count"] > 0
+    for message in host:
+        if message.get("tool_calls") or message.get("role") == "tool":
+            assert message in result
     leaves = _leaf_sources(engine)
-    assert leaves[0] == list(chain[0].covered_store_ids)
-    roles = dict(
-        engine._store.connection.execute(
-            "SELECT store_id, role FROM messages WHERE session_id = 'S'"
-        ).fetchall()
-    )
-    assert any(
-        roles[a] == roles[a + 1] == "assistant" for a in leaves[0] if a + 1 in leaves[0]
-    )  # the emission's text row and its tool-call row, both covered
     flat = [store_id for ids in leaves for store_id in ids]
     assert len(flat) == len(set(flat))
+    tool_ids = {row["store_id"] for row in before if row.get("tool_calls") or row["role"] == "tool"}
+    assert not tool_ids.intersection(flat)
 
 
 def test_a_prepared_chunk_ending_inside_an_emission_is_rejected_never_published(
@@ -583,28 +585,38 @@ def test_cache_bound_evicts_the_least_recently_used_conversation(
 # 4. no double publication ----------------------------------------------------------------------------------------
 
 
-def test_rows_already_claimed_are_rejected_by_the_fence_never_published_twice(
-    engine, provider, _isolated
+@pytest.mark.parametrize("late_claim", [False, True])
+def test_rows_already_claimed_are_never_published_twice(
+    engine, provider, _isolated, monkeypatch, late_claim
 ):
     view = _crossing_view(engine)
     chain = _prepared(engine, _isolated, view)
     claimed = list(chain[0].covered_store_ids)
-    # A competing publication claims the first leaf's rows; the lifecycle frontier has not moved yet.
-    engine._dag.add_node(
-        SummaryNode(
-            session_id="S",
-            depth=0,
-            summary="competing leaf",
-            token_count=3,
-            source_token_count=100,
-            source_ids=claimed,
-            source_type="messages",
-        )
-    )
+
+    def competing_publication():
+        engine._dag.add_node(SummaryNode(
+            session_id="S", depth=0, summary="competing leaf", token_count=3,
+            source_token_count=100, source_ids=claimed, source_type="messages",
+        ))
+
+    if late_claim:
+        original = engine._match_prepared_leaf
+
+        def match_then_claim(*args, **kwargs):
+            result = original(*args, **kwargs)
+            assert result is not None
+            competing_publication()
+            monkeypatch.setattr(engine, "_match_prepared_leaf", original)
+            return result
+
+        monkeypatch.setattr(engine, "_match_prepared_leaf", match_then_claim)
+    else:
+        competing_publication()
 
     engine.compress(view, current_tokens=tokens.count_messages_tokens(view))
 
-    assert _isolated.counters["rejected_fence_conflict"] == len(chain)
+    reason = "rejected_fence_conflict" if late_claim else "rejected_host_unit_split"
+    assert _isolated.counters[reason] == len(chain)
     assert _isolated.counters["promoted"] == 0
     for store_id in claimed:
         assert sum(store_id in ids for ids in _leaf_sources(engine)) == 1
@@ -1385,3 +1397,40 @@ def test_r5_reconcile_metadata_change_does_not_rewrite_prepared_rows(
     assert engine._message_replay_identity(changed[index]) != (
         engine._message_replay_identity(before[index], stored_row=True)
     )
+
+
+def test_uid_rewrite_rejects_prepared_summary_that_never_read_it(tmp_path, provider, _isolated):
+    from tests.test_host_uid_shadow import _state_db
+    _state_db(tmp_path, [("S", None, None)])
+    engine = _engine(tmp_path)
+    try:
+        view = _crossing_view(engine)
+        for i, row in enumerate(view):
+            row.pop("timestamp", None)
+            row["message_uid"] = f"synthetic-{i}"
+        _turn_end(engine, view)
+        chain = leaf_prep.ready_chain(engine._store.db_path, "conv", _frontier(engine))
+        assert chain
+        mapping = engine._get_store_id_map_for_messages(view)
+        target = next(row for row in view if mapping.get(id(row)) == chain[0].covered_store_ids[0])
+        before = engine._store.get_session_messages("S")
+        marker = "SYNTHETIC_UNREAD_REWRITE_MARKER"
+        target["content"] += " " + marker
+        prompts = []
+
+        def foreground(prompt):
+            prompts.append(prompt)
+            return SUMMARY + (" " + marker if marker in prompt else "")
+
+        provider.result = foreground
+        result = engine.compress(view, current_tokens=tokens.count_messages_tokens(view))
+        assert provider.on("MainThread") > 0
+        assert any(marker in prompt for prompt in prompts)
+        assert any(marker in str(row.get("content")) for row in result)
+        assert engine._store.get_session_messages("S") == before
+        assert _isolated.counters["rejected_host_unit_split"] == len(chain)
+        assert _isolated.counters["promoted"] == 0
+        sources = [sid for ids in _leaf_sources(engine) for sid in ids]
+        assert len(sources) == len(set(sources))
+    finally:
+        engine.shutdown()

@@ -1086,8 +1086,19 @@ class IdentityAnchorMixin:
           hides two stored ones), is REHYDRATED from its stored bytes, in store order, and claims only
           itself; the leaf is a bounded contiguous prefix of the owned rows (store_complete.py).
         Nothing is claimed without its text in the input; rows with valid coverage (<= frontier) keep it."""
-        if not identity_anchor_enabled() or not isinstance(full_map, dict) or not (chunk or budget) or (raw_chunk and not chunk):
+        if not isinstance(full_map, dict) or not (chunk or budget) or (raw_chunk and not chunk):
             return None  # an empty chunk is the #581 hidden-backlog leaf, never a chunk of dependent replies
+        if not identity_anchor_enabled():
+            uid_pairs, _superseded = self._uid_pairing_rows(view) if any(
+                isinstance(m.get("message_uid"), str) and m["message_uid"] for m in view) else ({}, set())
+            audit = self._uid_coverage_status()
+            if not uid_pairs and not audit.get("unpaired_count") and not audit.get("covered_store_ids"):
+                return None
+            # The switch controls legacy identity anchoring, not UID provenance.
+            return self._store_complete_input(
+                chunk, {}, full_map, view, raw_chunk, self._store_complete_frontier(),
+                self._load_compression_carry_ranges(), max(budget or 0, count_messages_tokens(chunk)),
+                accounted_ids, copy_lookup=copy_lookup)
         frontier, mapped = self._store_complete_frontier(), set(full_map.values())
         carry = self._load_compression_carry_ranges()
 

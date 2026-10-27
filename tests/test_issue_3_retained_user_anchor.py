@@ -610,5 +610,6 @@ def test_second_real_user_disqualifies_first_raw_anchor(
         if message.get("role") == "user"
     ]
     assert any(second_user["content"] in content for content in user_contents)
-    assert first_user["content"] not in user_contents
+    # The anchor is retired, but an unresolved occurrence must remain active.
+    assert first_user["content"] in user_contents
     assert anchor_metadata == {"store_id": 0, "version": 1}

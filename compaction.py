@@ -52,6 +52,7 @@ from .reconcile import (
 )
 from .sanitize import _contains_sensitive_redaction
 from .sqlite_util import PhaseSqlTrace, _is_sqlite_locked_error
+from .store import _normalize_observed_at
 from .survival_fit import _RECOVERY_THRESHOLD_SHARE
 from .tokens import count_message_tokens, count_messages_tokens, count_tokens
 
@@ -651,6 +652,10 @@ class CompactionMixin:
         with self._bypass_compression_binding() as bypassed:
             if bypassed:
                 return self._compress_bypassed(messages, current_tokens, focus_topic, force)
+        self._uid_source_bindings = {}
+        self._uid_sparse_coverage = False
+        self._uid_coverage_audit = {}
+        self._uid_coverage_owner = (self._hermes_home, self._session_id, self._conversation_id)
         self._last_compress_leaves = None
         self._last_hidden_backlog = None
         self._compress_forced_overflow = False
@@ -724,6 +729,16 @@ class CompactionMixin:
                     self._start_no_progress_hold("hidden_only")
                 logger.info("LCM hidden-only compaction kept host list unchanged: leaves=%d hidden_rows=%d",
                             budget.leaves, self._compress_hidden_rows_consumed)
+            if self._uid_coverage_audit and isinstance(result, list):
+                before_tokens, after_tokens = count_messages_tokens(messages), count_messages_tokens(result)
+                self._uid_coverage_audit.update(context_shrank=after_tokens < before_tokens,
+                                                tokens_before=before_tokens, tokens_after=after_tokens)
+                if budget.leaves and after_tokens >= before_tokens:
+                    # Keep the internal publication marker: replay proof must
+                    # survive even when summary headers erase the token savings.
+                    budget.progress = ""
+                    self._last_compression_noop_reason = "published leaf did not shrink the returned context"
+                    self._no_progress_candidate = True
             if self._no_progress_candidate and not bypass_cooldown and len(result) >= len(messages) and (
                     count_messages_tokens(result) >= count_messages_tokens(messages)):
                 # #651: no leaf, and neither rows nor tokens fell; #922 keeps the turn-paced hold.
@@ -892,14 +907,18 @@ class CompactionMixin:
             if exited:  # #671: the free cuts reached the target before any model call
                 reason = "stub_first_exit"
             logger.info("LCM compaction stop: reason=%s leaves=%d progress=%s elapsed=%.1fs pre=%.1fs calls=%.1fs "
-                        "finalize=%.1fs backlog_tokens=%d%s%s%s%s", reason, budget.leaves, budget.progress or "none", elapsed,
+                        "finalize=%.1fs backlog_tokens=%d%s%s%s%s%s", reason, budget.leaves, budget.progress or "none", elapsed,
                         pre, calls, finalize,
                         self._raw_backlog_tokens(result) if isinstance(result, list) and not bypassed else 0,
                         f" host={budget.host:.1f}s" if budget.host > 0 else "",
                         " tokens_before={tokens_before} tokens_after={tokens_after} target={target_tokens} "
                         "backlog_rows={backlog_rows}".format(**exited) if exited else "",
                         " blocked=store_id:%d,role:%s,kind:%s" % blocked[:3] if blocked else empty_input,  # #1162
-                        f" failure={self._survival_fit_reason}" if reason == "error" and self._survival_fit_reason else "")
+                        f" failure={self._survival_fit_reason}" if reason == "error" and self._survival_fit_reason else "",
+                        (" unpaired_count=%d unpaired=%s" % (
+                            self._uid_coverage_status().get("unpaired_count", 0),
+                            json.dumps(self._uid_coverage_status().get("unpaired", []), ensure_ascii=True)))
+                        if self._uid_coverage_status() else "")
         except Exception:
             logger.debug("LCM compaction stop line failed", exc_info=True)
         if self._bypasses_lcm_context_management():
@@ -1179,6 +1198,16 @@ class CompactionMixin:
                     filter_exclusion_proofs,
                     carried_ranges,
                     copy_exclusion_proofs=self._store_complete_copy_exclusion_proofs,
+                    **({"sparse_coverage": bool(getattr(self, "_uid_sparse_coverage", False)),
+                        "uid_lineage": self._host_uid_lineage_key()[0],
+                        "uid_source_bindings": {sid: uid for sid, uid in getattr(self, "_uid_source_bindings", {}).items()
+                                                if sid in consumed_store_ids},
+                        "uid_superseded_ids": sorted(set(getattr(self, "_uid_superseded_store_ids", ()))
+                                                     & set(publication_excluded_store_ids))}
+                       if getattr(self, "_uid_source_bindings", None)
+                       or getattr(self, "_uid_sparse_coverage", False)
+                       or set(getattr(self, "_uid_superseded_store_ids", ())) & set(publication_excluded_store_ids)
+                       else {}),
                 )
             before_commit = stage_frontier
         self._dag.add_node(
@@ -1187,6 +1216,69 @@ class CompactionMixin:
             escalation_level=level or None,  # #441; 0 = placeholder, no model call
             model=model,
         )
+
+    def _uid_leaf_candidates(self, candidate, view, full_map):
+        """Keep unresolved occurrences live while allowing other groups to drain."""
+        has_uid = any(isinstance(m.get("message_uid"), str) and m["message_uid"] for m in view)
+        # A UID-less replay can resolve a gap left by an earlier sparse leaf.
+        # Its already-published sources remain covered even above the frontier.
+        covered = self._store_complete_node_covered(
+            {sid for sid in full_map.values() if sid > self._last_compacted_store_id})
+        if not has_uid and not covered and all(
+                id(m) in full_map or self._is_context_summary_content(m.get("content")) for m in view):
+            return candidate
+        pairs, superseded = self._uid_pairing_rows(view)
+        carry = self._load_compression_carry_ranges()
+        unpaired = []
+        unresolved = set()
+        for message in view:
+            if id(message) in full_map:
+                continue
+            if self._generated_context_carrier_remainder(message) is not None or self._is_context_summary_content(
+                    message.get("content")):
+                continue
+            if (self._identity_anchor_key_occurrence(message, set(full_map.values()), carry) is not None
+                    or self._identity_anchor_carrier_group(message, set())):
+                continue
+            stamp = _normalize_observed_at(message.get("timestamp"))
+            if message.get("role") == "user" and stamp is not None:
+                scope = [str(self._session_id), *self._identity_anchor_chain()]
+                donors = [row for row in self._store.find_rows_by_observed_at(
+                    str(self._conversation_id or ""), scope, [stamp]) if row.get("role") == "user"]
+                content = self._message_replay_identity(message, strip_carrier=False)[1]
+                groups = [group for group in self._identity_anchor_witnesses(donors, stamp)
+                          if self._identity_anchor_group_matches(content, group)
+                          and all(self._identity_anchor_owned(row, carry)
+                                  and int(row["store_id"]) not in full_map.values() for row in group)]
+                if len(groups) == 1:
+                    continue  # the existing anchor path validates and claims this composite
+            unresolved.add(id(message))
+            unpaired.append({"store_id": message.get("store_id"), "uid": message.get("message_uid")})
+        if not has_uid and not unresolved and not covered:
+            return candidate
+        self._uid_coverage_audit = {
+            "unpaired_count": len(unpaired), "unpaired": unpaired,
+            "paired_store_ids": sorted(set(full_map.values())), "superseded_store_ids": sorted(superseded),
+            **({"covered_store_ids": sorted(covered)} if covered else {}),
+        }
+        self._uid_coverage_owner = (self._hermes_home, self._session_id, self._conversation_id)
+        out, index = [], 0
+        while index < len(candidate):
+            stop = index + 1
+            if candidate[index].get("tool_calls"):
+                while stop < len(candidate) and candidate[stop].get("role") == "tool":
+                    stop += 1
+            group = candidate[index:stop]
+            if not any(id(m) in unresolved or full_map.get(id(m)) in covered for m in group):
+                out.extend(group)
+            index = stop
+        return out
+
+    def _uid_coverage_status(self):
+        if (self._bypasses_lcm_context_management() or self.side_channel_active
+                or getattr(self, "_uid_coverage_owner", None) != (self._hermes_home, self._session_id, self._conversation_id)):
+            return {}
+        return copy.deepcopy(getattr(self, "_uid_coverage_audit", {}))
 
     def _leaf_consumption(self, selected_raw_chunk, compacted_chunk, sources, anchored_input, anchor_claims,
                           dependent_reply_message_ids):
@@ -1215,13 +1307,20 @@ class CompactionMixin:
         ):
             last_consumed_raw_pos += 1
         source_lookup_chunk = selected_raw_chunk[: last_consumed_raw_pos + 1]
+        if (getattr(self, "_uid_sparse_coverage", False)
+                or any(isinstance(m.get("message_uid"), str) and m["message_uid"] for m in selected_raw_chunk)):
+            source_lookup_chunk = [m for m in selected_raw_chunk if id(m) in compacted_summary_ids]
         source_lineage_chunk = [
             message for message in source_lookup_chunk if id(message) not in dependent_reply_message_ids
         ]
         full_map = self._compress_run.store_ids_by_message_id  # #535: the pass maps the whole list
-        source_store_ids = self._get_store_ids_for_messages(source_lineage_chunk, full_map)
+        uid_consumption = (getattr(self, "_uid_sparse_coverage", False)
+                           or any(isinstance(m.get("message_uid"), str) and m["message_uid"] for m in selected_raw_chunk))
+        source_store_ids = ([full_map[id(m)] for m in source_lineage_chunk if id(m) in (full_map or {})]
+                            if uid_consumption else self._get_store_ids_for_messages(source_lineage_chunk, full_map))
         source_store_ids = sorted(dict.fromkeys(source_store_ids + anchor_claimed_ids))
-        consumed_store_ids = self._get_store_ids_for_messages(source_lookup_chunk, full_map)
+        consumed_store_ids = ([full_map[id(m)] for m in source_lookup_chunk if id(m) in (full_map or {})]
+                              if uid_consumption else self._get_store_ids_for_messages(source_lookup_chunk, full_map))
         consumed_store_ids = sorted(dict.fromkeys(consumed_store_ids + anchor_claimed_ids))
         return compacted_chunk, compacted_positions, source_lookup_chunk, source_store_ids, consumed_store_ids
 
@@ -1287,6 +1386,15 @@ class CompactionMixin:
         saved_diagnostics = (getattr(self, "_store_complete_blocked", None),
                              getattr(self, "_store_complete_empty_reason", ""))
         selected_input = [message for message in chunk if id(message) not in dependent_reply_message_ids]
+        if any(isinstance(m.get("message_uid"), str) and m["message_uid"] for m in selected_input):
+            uid_pairs, _superseded = self._uid_pairing_rows(selected_input)
+            for message in selected_input:
+                stored = uid_pairs.get(message.get("message_uid"))
+                if stored is not None and self._message_replay_identity(
+                        message, strip_carrier=False) not in self._stored_row_forms(stored):
+                    # The worker read stored bytes, not this host rewrite. Equal
+                    # source IDs cannot make its cached summary cover new input.
+                    return None
         self._store_complete_excluded, self._store_complete_cut = [], False
         try:
             anchored_input = self._identity_anchor_summary_input(
@@ -2540,6 +2648,9 @@ class CompactionMixin:
                 focus_topic = self._derive_auto_focus_topic(working_messages)
 
             candidate_raw = working_messages[leading_anchor_count:fresh_tail_start]
+            candidate_raw = self._uid_leaf_candidates(
+                candidate_raw, working_messages[leading_anchor_count:],
+                self._compress_run.store_ids_by_message_id or {})
             # #922: when assembly can repeat the current objective verbatim, a leaf
             # containing only that prompt cannot reduce the active context.
             # Keep filtering/publication and assistant-tail bookkeeping on their existing paths.
@@ -2579,7 +2690,8 @@ class CompactionMixin:
                     eligible_tokens=0,
                 ):
                     continue
-                noop_reason = "no eligible raw backlog outside fresh tail"
+                noop_reason = ("no paired uncovered source rows" if self._uid_coverage_status().get("unpaired_count", 0)
+                               else "no eligible raw backlog outside fresh tail")
                 if threshold_full_sweep_active:
                     sweep_raw_drained = True
                     sweep_stop_reason = "raw_prefix_drained"
@@ -2751,8 +2863,21 @@ class CompactionMixin:
                 self._last_leaf_content_filter_error = False
                 try:
                     full_map = self._compress_run.store_ids_by_message_id  # #1147 r1: use the full pass lineage.
-                    self._leaf_rescue_admit = lambda chunk: any(anchor_claims.get(id(m)) for m in chunk) or bool(
-                        self._get_store_ids_for_messages([sources.get(id(m), m) for m in chunk], full_map))
+                    claim_units: dict[int, set[int]] = {}
+                    for message in summary_input_chunk:
+                        for store_id in anchor_claims.get(id(message), ()):
+                            claim_units.setdefault(store_id, set()).add(id(message))
+
+                    def admit_rescue(chunk):
+                        present = {id(message) for message in chunk}
+                        # A rewritten UID occurrence and its durable bytes share
+                        # one source claim. Never publish half of that input unit.
+                        if any(unit & present and not unit <= present for unit in claim_units.values()):
+                            return False
+                        return any(anchor_claims.get(id(m)) for m in chunk) or bool(
+                            self._get_store_ids_for_messages([sources.get(id(m), m) for m in chunk], full_map))
+
+                    self._leaf_rescue_admit = admit_rescue
                     summary_kwargs: dict[str, Any] = {"focus_topic": focus_topic}
                     if threshold_full_sweep_active:
                         summary_kwargs["deadline"] = sweep_deadline
@@ -2798,7 +2923,9 @@ class CompactionMixin:
                 self._leaf_consumption(selected_raw_chunk, compacted_chunk, sources, anchored_input, anchor_claims,
                                        dependent_reply_message_ids))
             selected_raw_len = len(source_lookup_chunk)
-            remaining_messages = working_messages[leading_anchor_count + selected_raw_len:]
+            consumed_message_ids = {id(m) for m in source_lookup_chunk}
+            remaining_messages = [m for m in working_messages[leading_anchor_count:]
+                                  if id(m) not in consumed_message_ids]
             source_tokens = count_messages_tokens(source_lookup_chunk)
             if not consumed_store_ids:  # #1141: oldest-prefix rescue can discard the last durable source.
                 self._warn_unattributed_leaf(compacted_chunk)  # #1147 r1: keep the publication backstop.
@@ -2887,12 +3014,18 @@ class CompactionMixin:
                     condensation_passes=pre_leaf_condensation_passes,  # #653: completed pre-leaf passes
                     context_is_assembled=context_is_assembled,
                 )
+            if getattr(self, "_uid_sparse_coverage", False):
+                published_state = self._lifecycle.get_by_conversation(self._conversation_id)
+                published_frontier = (published_state.current_frontier_store_id if published_state is not None
+                                      else self._last_compacted_store_id)
             self._last_compacted_store_id = published_frontier
             self._compress_host_rows_consumed += selected_raw_len
             self._compress_hidden_rows_consumed += len(compacted_chunk) - len(compacted_positions)
             self._invalidate_rollups_for_published_node(node)
 
-            pressure_remaining_messages = pressure_messages[leading_anchor_count + selected_raw_len:]
+            consumed_positions = {i for i, m in enumerate(working_messages) if id(m) in consumed_message_ids}
+            pressure_remaining_messages = [m for i, m in enumerate(pressure_messages)
+                                           if i >= leading_anchor_count and i not in consumed_positions]
             working_messages = working_messages[:leading_anchor_count] + remaining_messages
             pressure_messages = pressure_messages[:leading_anchor_count] + pressure_remaining_messages
             leaf_compacted_this_turn, no_call_only, refused_input = True, False, None

@@ -72,28 +72,20 @@ def test_duplicate_active_identity_cannot_orphan_a_durable_occurrence(
         result = engine.compress(active)
         nodes = engine._dag.get_session_nodes(identity)
         state = engine._lifecycle.get_by_conversation(identity)
+        stored = engine._store.get_session_messages(identity)
     finally:
         engine.shutdown()
 
-    # #581: the durable occurrence the duplicate view rows do not map is read from the store into the
-    # leaf, so publication proves contiguous coverage instead of failing open; nothing is orphaned.
+    # The unmatched occurrence remains live. Summarizing the tiny blank row
+    # grows this context, so publication must not claim reduction or cross the gap.
     assert state is not None
-    assert engine.last_compression_status == "compacted"
+    assert engine.last_compression_status in {"noop", "sanitized"}
     assert result[-1] == active[-1]
-    published_frontier = state.current_frontier_store_id
-    assert published_frontier == durable_ids[1]
-    covered = {
-        source_id
-        for node in nodes
-        if node.source_type == "messages"
-        for source_id in node.source_ids
-    }
-    expected_covered = {
-        store_id
-        for store_id in durable_ids
-        if store_id <= published_frontier
-    }
-    assert covered == expected_covered
+    assert any(durable[0]["content"] in row.get("content", "") for row in result)
+    assert state.current_frontier_store_id == 0
+    assert {sid for node in nodes for sid in node.source_ids} == {durable_ids[1]}
+    assert [row["store_id"] for row in stored] == durable_ids
+    assert [row["content"] for row in stored] == [row["content"] for row in durable]
 
 
 def test_repeated_durable_content_publishes_a_contiguous_frontier(

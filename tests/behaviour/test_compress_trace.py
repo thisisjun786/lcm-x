@@ -185,7 +185,7 @@ def test_plugin_logs_keep_templates_order_and_restore_loggers(tmp_path: Path) ->
 
 
 @pytest.mark.parametrize(("name", "template"), [
-    ("unattributed-rotated-history", "LCM leaf chunk has no durable source above the frontier:"),
+    ("unattributed-rotated-history", "LCM compaction #%d:"),
     ("prepared-leaf-promotion", "LCM promoted %d prepared leaves:"),
     ("prepared-leaf-route-rejected", "LCM prepared leaf promotion rejected:"),
     ("pre-leaf-condensation-rejected", "LCM compaction stopped: summary result rejected at level 3;"),
@@ -199,7 +199,8 @@ def test_new_observers_reach_their_product_paths(name: str, template: str) -> No
         after = next(event.removeprefix("leaf_prep after ") for event in events if event.startswith("leaf_prep after "))
         assert before != after, "preparation must actually promote or reject a cached leaf"
     if name.startswith("unattributed-"):
-        assert any(event.startswith("attr _unattributed_leaf_warned=") for event in events)
+        assert any(event.startswith("attr _uid_coverage_audit=") for event in events)
+        assert "attr _compress_host_rows_consumed=4" in events
 
 
 def test_fixture_scenario_inventory() -> None:
