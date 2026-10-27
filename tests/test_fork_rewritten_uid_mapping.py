@@ -666,3 +666,37 @@ def test_rewrite_rescue_never_claims_only_one_representation(tmp_path, monkeypat
         assert all(any(row['content'] in m.get('content', '') for m in result) for row in tail)
     finally:
         engine.shutdown()
+
+
+@pytest.mark.parametrize('anchoring', ['0', '1'])
+def test_uid_source_bytes_are_read_independently_of_identity_anchor_switch(tmp_path, monkeypatch, anchoring):
+    import hermes_lcm.engine as module
+    monkeypatch.setenv('LCM_IDENTITY_ANCHOR', anchoring)
+    texts = []
+
+    def summarize(**kwargs):
+        texts.append(kwargs['text'])
+        return 'Synthetic complete versions.', 1
+
+    monkeypatch.setattr(module, 'summarize_with_escalation', summarize)
+    engine = _engine(tmp_path)
+    try:
+        original = {'role': 'assistant', 'content': 'DURABLE_ONLY_MARKER ' + 'stored ' * 500, 'message_uid': 'rewrite'}
+        tail = [{'role': 'user', 'content': 'fresh question', 'message_uid': 'user'},
+                {'role': 'assistant', 'content': 'fresh answer', 'message_uid': 'assistant'}]
+        ids = []
+        for row in [original, *tail]:
+            sid = engine._store.append('S', _plain(row))
+            bind(engine, row['message_uid'], sid)
+            ids.append(sid)
+        before = engine._store.get_session_messages('S')
+        view = [{**original, 'content': 'HOST_ONLY_MARKER ' + 'rewritten ' * 500}, *tail]
+        engine._ingest_cursor = len(view)
+        engine.compress(view, current_tokens=100000, force=True)
+        assert len(texts) == 1
+        assert 'DURABLE_ONLY_MARKER' in texts[0] and 'HOST_ONLY_MARKER' in texts[0]
+        assert [sid for n in engine._dag.get_session_nodes('S') if n.source_type == 'messages'
+                for sid in n.source_ids] == ids[:1]
+        assert engine._store.get_session_messages('S') == before
+    finally:
+        engine.shutdown()

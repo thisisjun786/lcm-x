@@ -72,3 +72,7 @@ was persisted. Do not copy message content into pairing diagnostics.
 frontier. UID-less recovery checks this set too. A shorter summary retry cannot
 claim only the stored half of a rewritten UID occurrence: that retry is refused,
 and the whole occurrence stays active for a later successful attempt.
+
+A cached background leaf is rejected when a bound host occurrence differs from
+the worker's stored input. Foreground summarization must read both forms; turning
+off legacy identity anchoring does not disable this UID provenance check.

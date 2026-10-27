@@ -1397,3 +1397,40 @@ def test_r5_reconcile_metadata_change_does_not_rewrite_prepared_rows(
     assert engine._message_replay_identity(changed[index]) != (
         engine._message_replay_identity(before[index], stored_row=True)
     )
+
+
+def test_uid_rewrite_rejects_prepared_summary_that_never_read_it(tmp_path, provider, _isolated):
+    from tests.test_host_uid_shadow import _state_db
+    _state_db(tmp_path, [("S", None, None)])
+    engine = _engine(tmp_path)
+    try:
+        view = _crossing_view(engine)
+        for i, row in enumerate(view):
+            row.pop("timestamp", None)
+            row["message_uid"] = f"synthetic-{i}"
+        _turn_end(engine, view)
+        chain = leaf_prep.ready_chain(engine._store.db_path, "conv", _frontier(engine))
+        assert chain
+        mapping = engine._get_store_id_map_for_messages(view)
+        target = next(row for row in view if mapping.get(id(row)) == chain[0].covered_store_ids[0])
+        before = engine._store.get_session_messages("S")
+        marker = "SYNTHETIC_UNREAD_REWRITE_MARKER"
+        target["content"] += " " + marker
+        prompts = []
+
+        def foreground(prompt):
+            prompts.append(prompt)
+            return SUMMARY + (" " + marker if marker in prompt else "")
+
+        provider.result = foreground
+        result = engine.compress(view, current_tokens=tokens.count_messages_tokens(view))
+        assert provider.on("MainThread") > 0
+        assert any(marker in prompt for prompt in prompts)
+        assert any(marker in str(row.get("content")) for row in result)
+        assert engine._store.get_session_messages("S") == before
+        assert _isolated.counters["rejected_host_unit_split"] == len(chain)
+        assert _isolated.counters["promoted"] == 0
+        sources = [sid for ids in _leaf_sources(engine) for sid in ids]
+        assert len(sources) == len(set(sources))
+    finally:
+        engine.shutdown()

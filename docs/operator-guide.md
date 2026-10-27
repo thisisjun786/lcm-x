@@ -1575,6 +1575,9 @@ UID-less replay also checks these source sets before draining a resolved gap.
 Stored bytes and a differing UID-bound host representation share one source
 claim: a smaller-prefix retry that splits them is refused without publication.
 The occurrence stays active so a later successful full attempt can drain it.
+A prepared background summary cannot consume a host rewrite the worker did not
+read; that leaf is summarized in the foreground. UID source-byte checks remain
+active even when the legacy identity-anchor fallback is disabled.
 
 `lcm_status.uid_coverage` reports `paired_store_ids`, `superseded_store_ids`,
 `unpaired_count`, and `unpaired` entries containing only `store_id` and `uid`.

@@ -1386,6 +1386,15 @@ class CompactionMixin:
         saved_diagnostics = (getattr(self, "_store_complete_blocked", None),
                              getattr(self, "_store_complete_empty_reason", ""))
         selected_input = [message for message in chunk if id(message) not in dependent_reply_message_ids]
+        if any(isinstance(m.get("message_uid"), str) and m["message_uid"] for m in selected_input):
+            uid_pairs, _superseded = self._uid_pairing_rows(selected_input)
+            for message in selected_input:
+                stored = uid_pairs.get(message.get("message_uid"))
+                if stored is not None and self._message_replay_identity(
+                        message, strip_carrier=False) not in self._stored_row_forms(stored):
+                    # The worker read stored bytes, not this host rewrite. Equal
+                    # source IDs cannot make its cached summary cover new input.
+                    return None
         self._store_complete_excluded, self._store_complete_cut = [], False
         try:
             anchored_input = self._identity_anchor_summary_input(
