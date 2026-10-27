@@ -1220,11 +1220,15 @@ class CompactionMixin:
     def _uid_leaf_candidates(self, candidate, view, full_map):
         """Keep unresolved occurrences live while allowing other groups to drain."""
         has_uid = any(isinstance(m.get("message_uid"), str) and m["message_uid"] for m in view)
-        if not has_uid and all(id(m) in full_map or self._is_context_summary_content(m.get("content")) for m in view):
+        # A UID-less replay can resolve a gap left by an earlier sparse leaf.
+        # Its already-published sources remain covered even above the frontier.
+        covered = self._store_complete_node_covered(
+            {sid for sid in full_map.values() if sid > self._last_compacted_store_id})
+        if not has_uid and not covered and all(
+                id(m) in full_map or self._is_context_summary_content(m.get("content")) for m in view):
             return candidate
         pairs, superseded = self._uid_pairing_rows(view)
         carry = self._load_compression_carry_ranges()
-        covered = self._store_complete_node_covered(set(full_map.values()))
         unpaired = []
         unresolved = set()
         for message in view:
@@ -1250,11 +1254,12 @@ class CompactionMixin:
                     continue  # the existing anchor path validates and claims this composite
             unresolved.add(id(message))
             unpaired.append({"store_id": message.get("store_id"), "uid": message.get("message_uid")})
-        if not has_uid and not unresolved:
+        if not has_uid and not unresolved and not covered:
             return candidate
         self._uid_coverage_audit = {
             "unpaired_count": len(unpaired), "unpaired": unpaired,
             "paired_store_ids": sorted(set(full_map.values())), "superseded_store_ids": sorted(superseded),
+            **({"covered_store_ids": sorted(covered)} if covered else {}),
         }
         self._uid_coverage_owner = (self._hermes_home, self._session_id, self._conversation_id)
         out, index = [], 0

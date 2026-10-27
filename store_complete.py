@@ -318,7 +318,8 @@ class StoreCompleteMixin:
         self._uid_sparse_coverage = False
         if chunk and (any(isinstance(m.get("message_uid"), str) and m["message_uid"] in uid_pairs
                           and id(m) in full_map for m in view)
-                      or self._uid_coverage_status().get("unpaired_count", 0)):
+                      or self._uid_coverage_status().get("unpaired_count", 0)
+                      or self._uid_coverage_status().get("covered_store_ids")):
             self._uid_sparse_coverage = True
             return self._uid_set_leaf_input(chunk, claims, full_map, uid_pairs, superseded)
         in_chunk = {id(message) for message in chunk}

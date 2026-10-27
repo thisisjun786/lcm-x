@@ -564,3 +564,46 @@ def test_version_exclusion_is_rechecked_for_content_fallback_publication(tmp_pat
         assert engine._lifecycle.get_by_conversation('conv').current_frontier_store_id == 0
     finally:
         engine.shutdown()
+
+
+@pytest.mark.parametrize('restart', [False, True])
+def test_uidless_replay_drains_sparse_gap_exactly_once(tmp_path, monkeypatch, restart):
+    import hermes_lcm.engine as module
+    from hermes_lcm.tokens import count_messages_tokens
+    monkeypatch.setattr(module, 'summarize_with_escalation', lambda **kwargs: ('Synthetic earlier turns.', 1))
+    rows = [{'role': 'assistant', 'content': f'synthetic {i} ' + 'word ' * 500} for i in range(6)]
+    engine = _engine(tmp_path)
+    try:
+        ids = [engine._store.append('S', row) for row in rows]
+        before = engine._store.get_session_messages('S')
+        unknown = {'role': 'assistant', 'content': 'synthetic unresolved head ' + 'other ' * 500}
+        view = [unknown, *rows[1:]]
+        engine._ingest_cursor = len(view)
+        first = engine.compress(view, current_tokens=100000, force=True)
+        assert any(unknown['content'].strip() in m.get('content', '') for m in first)
+        def sources():
+            return [sid for n in engine._dag.get_session_nodes('S')
+                    if n.source_type == 'messages' for sid in n.source_ids]
+        assert set(sources()) == set(ids[1:4])
+        assert engine._last_compacted_store_id == 0
+        if restart:
+            engine.shutdown()
+            engine = _engine(tmp_path)
+        # The restored occurrence is now pairable by content; no UID is available.
+        engine._ingest_cursor = len(rows)
+        result = engine.compress(rows, current_tokens=100000, force=True)
+        assert engine._last_compression_status != 'error'
+        assert sorted(sources()) == ids[:4]
+        # Publication advances through the new leaf's bound; later coverage
+        # remains in the sparse source set until a subsequent frontier advance.
+        assert engine._last_compacted_store_id == ids[0]
+        assert engine._store.get_session_messages('S') == before
+        assert count_messages_tokens(result) < count_messages_tokens(rows)
+        assert all(any(row['content'].strip() in m.get('content', '') for m in result) for row in rows[-2:])
+        engine._ingest_cursor = len(rows)
+        engine.compress(rows, current_tokens=100000, force=True)
+        assert engine._last_compression_status != 'error'
+        assert sorted(sources()) == ids[:4]
+        assert engine._store.get_session_messages('S') == before
+    finally:
+        engine.shutdown()

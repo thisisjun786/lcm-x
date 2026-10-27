@@ -585,28 +585,38 @@ def test_cache_bound_evicts_the_least_recently_used_conversation(
 # 4. no double publication ----------------------------------------------------------------------------------------
 
 
-def test_rows_already_claimed_are_rejected_by_the_fence_never_published_twice(
-    engine, provider, _isolated
+@pytest.mark.parametrize("late_claim", [False, True])
+def test_rows_already_claimed_are_never_published_twice(
+    engine, provider, _isolated, monkeypatch, late_claim
 ):
     view = _crossing_view(engine)
     chain = _prepared(engine, _isolated, view)
     claimed = list(chain[0].covered_store_ids)
-    # A competing publication claims the first leaf's rows; the lifecycle frontier has not moved yet.
-    engine._dag.add_node(
-        SummaryNode(
-            session_id="S",
-            depth=0,
-            summary="competing leaf",
-            token_count=3,
-            source_token_count=100,
-            source_ids=claimed,
-            source_type="messages",
-        )
-    )
+
+    def competing_publication():
+        engine._dag.add_node(SummaryNode(
+            session_id="S", depth=0, summary="competing leaf", token_count=3,
+            source_token_count=100, source_ids=claimed, source_type="messages",
+        ))
+
+    if late_claim:
+        original = engine._match_prepared_leaf
+
+        def match_then_claim(*args, **kwargs):
+            result = original(*args, **kwargs)
+            assert result is not None
+            competing_publication()
+            monkeypatch.setattr(engine, "_match_prepared_leaf", original)
+            return result
+
+        monkeypatch.setattr(engine, "_match_prepared_leaf", match_then_claim)
+    else:
+        competing_publication()
 
     engine.compress(view, current_tokens=tokens.count_messages_tokens(view))
 
-    assert _isolated.counters["rejected_fence_conflict"] == len(chain)
+    reason = "rejected_fence_conflict" if late_claim else "rejected_host_unit_split"
+    assert _isolated.counters[reason] == len(chain)
     assert _isolated.counters["promoted"] == 0
     for store_id in claimed:
         assert sum(store_id in ids for ids in _leaf_sources(engine)) == 1
