@@ -164,7 +164,6 @@ def test_uid_pins_an_empty_occurrence_to_its_own_row(tmp_path):
 
 def test_stamped_check_is_on_by_default():
     """Read the module default in a clean interpreter (no reload of the shared engine module)."""
-    import os
     import re
     from pathlib import Path
     src = (Path(lcm_engine_module.__file__).read_text())

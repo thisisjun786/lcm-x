@@ -1,5 +1,9 @@
-"""#581 store-complete leaves: a leaf's summarizer input is a bounded, contiguous prefix of the owned
-stored rows above the frontier, in store order.
+"""Build source-complete leaves without consuming unresolved host occurrences.
+
+UID-paired and fail-open leaves use explicit source-ID sets in host/group order;
+the publication transaction advances a separate gap-safe contiguous frontier.
+The legacy fallback below builds a bounded contiguous prefix of owned stored
+rows above the frontier, in store order.
 
 The publication proof (lifecycle_state.py ``stage_compaction_publication``) asks every owned row in
 (frontier, covered_end] to be covered or excluded. A leaf built only from the host view could never
@@ -197,7 +201,8 @@ class StoreCompleteMixin:
         carry = self._load_compression_carry_ranges()
         rows, truncated = self._store_complete_owned_rows(frontier, end, carry)
         conversation = {"", str(self._conversation_id or "")}
-        loose = [int(row["store_id"]) for row in rows if int(row["store_id"]) not in mapped and row.get("role") != "system"
+        _uid_pairs, superseded = self._uid_pairing_rows(working)
+        loose = [int(row["store_id"]) for row in rows if int(row["store_id"]) not in mapped | superseded and row.get("role") != "system"
                  and str(row.get("conversation_id") or "").strip() in conversation
                  and not self._matches_ignore_message_patterns(row, stored_row=True)]
         twins, twin_covered = self._store_complete_copy_twins(rows, carry) if loose else ({}, set())
@@ -265,10 +270,41 @@ class StoreCompleteMixin:
             logger.debug("LCM fork uid occurrence pinning unavailable", exc_info=True)
             return occurrences, {}
 
+    def _uid_set_leaf_input(self, chunk, claims, full_map, uid_pairs, superseded):
+        """Build a leaf from explicit occurrences; never consume a store interval.
+
+        Host order keeps call/result groups intact. Stored bytes are included
+        before a rewritten host occurrence claims their lineage. The publication
+        transaction validates bindings and advances only a contiguous safe prefix.
+        """
+        covered = self._store_complete_node_covered(set(full_map.values()))
+        out = []
+        self._uid_source_bindings = {}
+        self._uid_superseded_store_ids = set(superseded)
+        for message in chunk:
+            sid = full_map.get(id(message))
+            ids = sorted(set(claims.get(id(message), ())) | ({sid} if sid else set()))
+            if not ids or set(ids) & (covered | superseded):
+                continue
+            bound = uid_pairs.get(message.get("message_uid")) if isinstance(message.get("message_uid"), str) else None
+            if bound is not None and sid == int(bound["store_id"]):
+                self._uid_source_bindings[sid] = message["message_uid"]
+                if self._message_replay_identity(message, strip_carrier=False) not in self._stored_row_forms(bound):
+                    out.append((self._store_complete_messages([bound])[0], [sid]))
+            out.append((message, ids))
+        self._store_complete_excluded = sorted(superseded)
+        self._store_complete_cut = True
+        if not out:
+            self._store_complete_empty_reason = "no paired uncovered source rows"
+        return out
+
     def _store_complete_input(self, chunk, claims, full_map, view, raw_chunk, frontier, carry, budget,
                               accounted_ids=(), scale: int = 1, scanned=None, copy_lookup=None) -> Optional[list]:
-        """``[(input_row, [store_id, ...]), ...]`` in store order; ``[]`` when the leaf cannot start
-        (the first owned row above the frontier is a retained occurrence); None: today's input."""
+        """Return explicit source claims, or None for unchanged legacy input.
+
+        UID/fail-open input preserves host groups and can cover a sparse set.
+        The legacy fallback retains its bounded store-prefix construction.
+        """
         from .identity_anchor import _match_occurrences
 
         self._store_complete_excluded, self._store_complete_cut = [], False
@@ -276,6 +312,15 @@ class StoreCompleteMixin:
         self._store_complete_blocked = None  # #1162: (store_id, role, kind, chunk head position) of a [] return
         self._store_complete_empty_reason = ""
         given_claims = claims
+        uid_pairs, superseded = self._uid_pairing_rows(view)
+        self._uid_source_bindings = {}
+        self._uid_superseded_store_ids = set(superseded)
+        self._uid_sparse_coverage = False
+        if chunk and (any(isinstance(m.get("message_uid"), str) and m["message_uid"] in uid_pairs
+                          and id(m) in full_map for m in view)
+                      or self._uid_coverage_status().get("unpaired_count", 0)):
+            self._uid_sparse_coverage = True
+            return self._uid_set_leaf_input(chunk, claims, full_map, uid_pairs, superseded)
         in_chunk = {id(message) for message in chunk}
         claims = {key: list(ids) for key, ids in claims.items()}
         # Rows this pass accounts for elsewhere: its exclusions (anchors, scaffold, committed replay)
@@ -291,6 +336,9 @@ class StoreCompleteMixin:
         loose = [row for row in rows if int(row["store_id"]) not in taken | passive | set(full_map.values())]
         ignored = {int(row["store_id"]) for row in loose if self._matches_ignore_message_patterns(row, stored_row=True)}
         covered = self._store_complete_node_covered([int(row["store_id"]) for row in loose if int(row["store_id"]) not in ignored])
+        # A newer bound version is the live occurrence. Keep older versions in
+        # raw history, without claiming them as this summary's source text.
+        covered.update(superseded)
         candidates = [row for row in loose if int(row["store_id"]) not in ignored | covered]
         occurrences = [(idx, self._message_replay_identity(message, strip_carrier=False))
                        for idx, message in enumerate(view) if id(message) not in full_map and not claims.get(id(message))]
@@ -355,6 +403,15 @@ class StoreCompleteMixin:
                 return False
             if answers:
                 group[3].add(str(message.get("tool_call_id") or "").strip())
+            bound = uid_pairs.get(message.get("message_uid")) if isinstance(message.get("message_uid"), str) else None
+            if (bound is not None and full_map.get(id(message)) == int(bound["store_id"])
+                    and self._message_replay_identity(message, strip_carrier=False)
+                    not in self._stored_row_forms(bound)):
+                # UID proves identity, not byte equality. Summarize the durable
+                # payload as well as the host rewrite before claiming its source.
+                durable = self._store_complete_messages([bound])[0]
+                out.append((durable, [int(bound["store_id"])]))
+                used += count_message_tokens(durable)
             out.append((message, ids))
             admitted.update(ids_of(message, ids))
             used += tokens

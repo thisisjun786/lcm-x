@@ -1016,11 +1016,16 @@ class LifecycleStateStore:
         filter_exclusion_proofs: dict[int, Any] | None = None,
         carried_ranges: list[tuple[str, int, int]] | None = None,
         copy_exclusion_proofs: dict[int, int] | None = None,
+        sparse_coverage: bool = False,
+        uid_lineage: str | None = None,
+        uid_source_bindings: dict[int, str] | None = None,
+        uid_superseded_ids: list[int] | None = None,
     ) -> int:
-        """Validate and stage one contiguous compaction-frontier advance.
+        """Validate a leaf and advance only a proven contiguous frontier.
 
-        The caller owns the node/frontier transaction. The expected frontier is
-        its optimistic publication generation.
+        Sparse coverage can publish without moving the frontier. Existing source
+        sets prove prior leaves; no new persisted format is required. The caller
+        owns the node/frontier transaction and supplies its expected frontier.
         """
         expected_frontier = max(0, int(expected_frontier_store_id or 0))
         all_covered_ids = sorted(
@@ -1142,7 +1147,50 @@ class LifecycleStateStore:
         rows = [rows_by_store_id[store_id] for store_id in sorted(rows_by_store_id)]
         authoritative_ids = [int(row[0]) for row in rows]
         proven_ids = sorted(covered_ids + excluded_ids)
-        if authoritative_ids != proven_ids:
+        # Revalidate version exclusions in the publication transaction.
+        version_exclusions = {sid for sid in (uid_superseded_ids or [])
+                              if expected_frontier < sid <= covered_end}
+        if not version_exclusions <= set(excluded_ids):
+            raise LifecyclePublicationConflictError("UID version proof is not excluded")
+        for sid in version_exclusions:
+            versions = conn.execute(
+                "SELECT m.store_id, m.session_id, m.conversation_id "
+                "FROM host_uid_bindings AS old JOIN host_uid_bindings AS newer "
+                "ON newer.lineage_key = old.lineage_key AND newer.uid = old.uid "
+                "JOIN messages AS m ON m.store_id = newer.store_id "
+                "WHERE old.lineage_key = ? AND old.store_id = ? AND newer.store_id > old.store_id "
+                "AND old.kind IN ('canonical', 'version') AND newer.kind IN ('canonical', 'version')",
+                (uid_lineage, sid)).fetchall()
+            if not any(row_is_owned(r) and str(r[2] or "").strip() in {"", conversation_id} for r in versions):
+                raise LifecyclePublicationConflictError("UID publication exclusion lacks version proof")
+        if sparse_coverage or uid_source_bindings:
+            if uid_source_bindings and (not uid_lineage or not set(uid_source_bindings) <= set(all_covered_ids)):
+                raise LifecyclePublicationConflictError("UID publication has invalid source bindings")
+            for sid, uid in (uid_source_bindings or {}).items():
+                versions = conn.execute(
+                    "SELECT m.store_id, m.session_id, m.conversation_id FROM host_uid_bindings AS binding "
+                    "JOIN messages AS m ON m.store_id = binding.store_id "
+                    "WHERE binding.lineage_key = ? AND binding.uid = ? "
+                    "AND binding.kind IN ('canonical', 'version')", (uid_lineage, uid)).fetchall()
+                newest = max((int(r[0]) for r in versions if row_is_owned(r)
+                              and str(r[2] or "").strip() in {"", conversation_id}), default=None)
+                if newest != sid:
+                    raise LifecyclePublicationConflictError("UID publication source binding changed")
+            # Existing leaves provide set coverage even when an earlier retained
+            # row prevented their publication from moving the frontier.
+            prior = {int(r[0]) for r in conn.execute(
+                "SELECT source.value FROM summary_nodes AS node, json_each(node.source_ids) AS source "
+                "WHERE node.session_id = ? AND node.source_type = 'messages' AND node.node_id != ? "
+                "AND source.value IN (SELECT value FROM json_each(?))",
+                (session_id, publication_node_id, str(authoritative_ids)))}
+            accounted = set(proven_ids) | prior
+            safe_end = expected_frontier
+            for sid in authoritative_ids:
+                if sid not in accounted:
+                    break
+                safe_end = sid
+            covered_end = safe_end
+        elif authoritative_ids != proven_ids:
             raise LifecyclePublicationConflictError(
                 _compaction_coverage_conflict_message(
                     expected_frontier, authoritative_ids, covered_ids, excluded_ids

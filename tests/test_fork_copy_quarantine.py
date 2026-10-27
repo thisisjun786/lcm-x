@@ -7,7 +7,6 @@ from __future__ import annotations
 
 import sqlite3
 
-import pytest
 
 from hermes_lcm import fork_copy_quarantine as fcq
 from hermes_lcm import fork_summary_quarantine as fsq

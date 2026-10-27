@@ -149,8 +149,11 @@ _host_message_uid_mode_warned = False
 
 
 def host_message_uid_mode() -> str:
-    """``LCM_HOST_MESSAGE_UID`` (v0.26.0): ``off`` | ``shadow`` (default) | ``on`` (reserved for slice C; runs as
-    ``shadow`` today). An unknown value means ``shadow``, with one WARNING per process."""
+    """UID capture mode: ``off`` | ``shadow`` (default) | ``on`` (same writer as shadow).
+
+    Existing owned bindings remain authoritative for compaction in every mode.
+    An unknown value means ``shadow``, with one WARNING per process.
+    """
     global _host_message_uid_mode_warned
     raw = (os.environ.get("LCM_HOST_MESSAGE_UID") or "").strip().lower()
     if raw and raw not in _HOST_MESSAGE_UID_MODES and not _host_message_uid_mode_warned:

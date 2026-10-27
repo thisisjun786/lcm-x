@@ -432,7 +432,7 @@ Useful environment variables:
 | `LCM_CRITICAL_BUDGET_PRESSURE_RATIO` | `0.0` | Disabled at `0.0`; when set, permits critical-pressure bypasses for bounded deferred catch-up and cache-friendly follow-on condensation only |
 | `LCM_SURVIVAL_FIT` | `true` | When compaction cannot bring the returned list under the model window (a publication failure, a sweep deadline, a lock), drop the oldest whole user turns from live context until it fits; an oversized newest turn gets a bounded projection. Nothing is deleted: the rows stay stored and reachable with `lcm_grep` / `lcm_load_session`. Logs `LCM survival fit applied`, warns the user once, and `/lcm doctor` reports `survival_fit` |
 | `LCM_SURVIVAL_RESERVE` | `0.15` | Share of the model window the survival fit keeps free for the response and host overhead (the fit target is window x (1 - reserve), minus the observed host overhead) |
-| `LCM_HOST_MESSAGE_UID` | `shadow` | `shadow`: on a host that sends `message_uid`, records the row each uid was bound to in the droppable `host_uid_bindings` table and counts agreement with the existing identity matching; ingest, replay and emission are unchanged, and `/lcm doctor` reports `host_uid_*` counts only. `off`: no capture, no table writes, no counts and no log line. Under `shadow` and `on`, canonical uid evidence can also exclude a proven hidden re-ingest copy of an assistant message from leaf summary input (the row stays stored and searchable); `off` disables that. `on` (reserved) and any unknown value behave as `shadow`; an unknown value also logs one warning. Bindings are deleted with their messages, and lineage keys are namespaced by Hermes home, so one database shared by several homes keeps them apart |
+| `LCM_HOST_MESSAGE_UID` | `shadow` | Controls UID capture and shadow diagnostics. `shadow` records canonical/version bindings and reports `host_uid_*` counts; `on` currently uses the same writer. `off` disables capture, table writes, shadow counts/logs, and UID-based hidden-copy exclusion. Existing owned bindings still determine live compaction pairing in every mode; disabling capture does not erase stored identity evidence. Missing bindings use content/position fallback. Unknown values warn once and use `shadow`. Bindings are namespaced by Hermes home and removed with their messages. |
 | `LCM_SUMMARY_MODEL` | auxiliary | Override summarization model |
 | `LCM_SUMMARY_FALLBACK_MODELS` | empty | Comma-separated summarization models tried after `LCM_SUMMARY_MODEL` or the auxiliary task default fails |
 | `LCM_SUMMARY_CIRCUIT_BREAKER_FAILURE_THRESHOLD` | `2` | Consecutive failed summarization calls before a route is skipped temporarily |
@@ -1558,3 +1558,29 @@ Safety and reconciliation behavior:
 - [Benchmarking and stress checks](../benchmarks/README.md)
 - [Release validation](release-validation.md)
 - [Packaging and distribution posture](packaging.md)
+
+
+## Rewritten and reordered host messages
+
+Compaction pairs a host `message_uid` with its newest owned stored version in the
+same profile lineage. Earlier versions remain searchable raw history. Rows without
+a UID or binding use the existing content/position fallback. UID-bound rows do not
+move that fallback cursor.
+
+A summary records its exact source-ID set. The lifecycle frontier advances only
+across accounted-for stored rows; a later summarized row can sit beyond a retained
+gap without claiming that gap. Unpaired host rows stay in the active view while
+other attributable rows compact, and tool groups are kept together.
+
+`lcm_status.uid_coverage` reports `paired_store_ids`, `superseded_store_ids`,
+`unpaired_count`, and `unpaired` entries containing only `store_id` and `uid`.
+The compaction stop line includes the unpaired count and identifiers. This audit
+belongs to the last compaction of the bound profile/session and is empty before
+one has run or when that foreground audit is unavailable. It is not durable
+coverage; summary source IDs remain the durable evidence. No message content is
+included in the audit.
+
+A persisted summary is not by itself proof that the returned context got smaller.
+If the assembled output does not reduce its token count, status reports a no-op
+and the stop line reports `progress=none`; raw source rows and the committed
+summary remain available. No database migration or new configuration is needed.

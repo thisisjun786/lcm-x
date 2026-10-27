@@ -210,3 +210,24 @@ lightweight ABC stub.
 - [Retrieval tools reference](retrieval-tools.md)
 - [Opt-in async/background compaction design](async-background-compaction.md)
 - [Benchmarking and stress checks](../benchmarks/README.md)
+
+
+### UID-first source coverage
+
+Within the bound profile lineage, canonical/version bindings pair host occurrences
+with the greatest owned store ID for their UID. Content and position remain the
+fallback only for rows without a binding. Superseded versions remain raw history;
+they are neither reused by fallback nor claimed as live summary input.
+
+Compaction keeps two distinct facts: each summary's explicit source-ID set, and
+the lifecycle's contiguous frontier. Sparse publication validates ownership,
+current UID bindings and version exclusions in the node transaction. It advances
+the frontier only through rows covered by this or earlier committed leaves, or
+valid exclusions, stopping before the first retained gap. The existing schema
+stores both facts; no extra persistence table or migration is introduced.
+
+Host removal follows the summarized occurrence set rather than a host prefix.
+Unpaired occurrences stay active and are reported without content. Full tool
+groups stay together. Summary rescue must retain the source-ID claims of the
+actual input it summarized. Final progress reporting compares returned-context
+tokens rather than counting persisted leaves alone.

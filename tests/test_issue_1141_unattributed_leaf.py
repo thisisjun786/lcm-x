@@ -59,7 +59,8 @@ def _assert_refused_before_call(engine, summarize, calls_before, caplog):
     assert CONFLICT not in caplog.text
     assert summarize.call_count == calls_before  # no paid call for a leaf that cannot publish
     assert engine._last_compression_status in {"noop", "sanitized"}  # never "error"
-    assert engine._last_compression_noop_reason == NOOP
+    assert engine._last_compression_noop_reason == "no paired uncovered source rows"
+    assert engine.get_status()["uid_coverage"]["unpaired_count"] > 0
     assert engine._no_progress_hold_active()
     assert engine._no_progress_hold[1] == "no_progress"
 
@@ -85,11 +86,9 @@ def _two_passes(engine, view, summarize, caplog):
         assert engine._store.get_session_messages(engine._session_id) == rows
     extraction.assert_not_called()
     warnings = [record.getMessage() for record in caplog.records if record.getMessage().startswith(WARNING)]
-    assert len(warnings) == 1
-    assert f"frontier={frontier} rows=" in warnings[0]
-    full_map = engine._current_compress_store_ids_by_message_id or {}
-    first = min((sid for sid in full_map.values() if sid > frontier), default="none")
-    assert warnings[0].endswith(f"first_mapped_store_id={first}")
+    assert warnings == []  # no unattributed summary is attempted
+    stops = [record.getMessage() for record in caplog.records if record.getMessage().startswith("LCM compaction stop:")]
+    assert stops and "unpaired_count=" in stops[-1] and "progress=none" in stops[-1]
 
 
 def test_rotate_apply_then_host_resumed_transcript(tmp_path, summarize, caplog):
@@ -146,8 +145,8 @@ def test_published_leaf_not_adopted_with_hidden_copies_after_frontier(tmp_path, 
         engine.shutdown()
 
 
-def test_oldest_prefix_rescue_loses_all_durable_source(tmp_path, summarize, caplog):
-    """A mixed stale/durable leaf passes admission, but the real rescue keeps only stale rows."""
+def test_oldest_prefix_rescue_skips_unpaired_rows_and_keeps_durable_source(tmp_path, summarize, caplog):
+    """An unpaired prefix stays live; rescue retries only attributable source rows."""
     engine = _engine(tmp_path, leaf_chunk_tokens=20_000, dynamic_leaf_chunk_max=20_000)
     history = _history()
     engine._ingest_messages(history)
@@ -157,34 +156,25 @@ def test_oldest_prefix_rescue_loses_all_durable_source(tmp_path, summarize, capl
     try:
         view = [*history, *_history(6, "B")]
         engine.ingest(view)
-        frontier = engine._store_complete_frontier()
-        nodes = engine._dag.get_session_nodes(engine._session_id)
         rows = engine._store.get_session_messages(engine._session_id)
-        summarize.side_effect = [RuntimeError("context length exceeded"), summarize.return_value]
-        with caplog.at_level(logging.INFO):
-            result = engine.compress(view, current_tokens=count_messages_tokens(view))
-        assert summarize.call_count == 1
-        assert "retrying with smaller oldest chunk" not in caplog.text
-        assert sum(record.levelno == logging.WARNING and record.getMessage().startswith(WARNING)
-                   for record in caplog.records) == 1
-        assert CONFLICT not in caplog.text
-        assert engine._last_compression_status in {"noop", "sanitized"}
-        assert engine._last_compression_noop_reason == NOOP
-        assert result == view
-        assert engine._store_complete_frontier() == frontier
-        assert engine._dag.get_session_nodes(engine._session_id) == nodes
-        assert engine._store.get_session_messages(engine._session_id) == rows
-        engine._no_progress_hold = None  # exercise another pass after the hold expires
+        mapping = engine._get_store_id_map_for_messages(view)
+        unpaired = [row for row in view if id(row) not in mapping]
         summarize.side_effect = [RuntimeError("context length exceeded"), summarize.return_value]
         with caplog.at_level(logging.INFO):
             result = engine.compress(view, current_tokens=count_messages_tokens(view))
         assert summarize.call_count == 2
-        assert "retrying with smaller oldest chunk" not in caplog.text
-        assert sum(record.levelno == logging.WARNING and record.getMessage().startswith(WARNING)
-                   for record in caplog.records) == 1
-        assert result == view
-        assert engine._store_complete_frontier() == frontier
-        assert engine._dag.get_session_nodes(engine._session_id) == nodes
+        assert "retrying with smaller oldest chunk" in caplog.text
+        assert not any(record.getMessage().startswith(WARNING) for record in caplog.records)
+        assert CONFLICT not in caplog.text
+        assert engine._last_compression_status == "compacted"
+        assert engine._last_compression_noop_reason == ""
+        assert count_messages_tokens(result) < count_messages_tokens(view)
+        assert all(any(row["content"].strip() in item.get("content", "") for item in result) for row in unpaired)
+        nodes = engine._dag.get_session_nodes(engine._session_id)
+        covered = [sid for node in nodes if node.source_type == "messages" for sid in node.source_ids]
+        assert covered and len(covered) == len(set(covered))
+        assert set(covered) <= {row["store_id"] for row in rows}
+        assert engine.get_status()["uid_coverage"]["unpaired_count"] == len(unpaired)
         assert engine._store.get_session_messages(engine._session_id) == rows
     finally:
         engine.shutdown()

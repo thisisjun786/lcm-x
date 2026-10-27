@@ -694,10 +694,12 @@ def test_r6_2_a_stale_rebind_never_overwrites_a_session_that_bound_after_its_rea
         other.shutdown()
 
 
-def test_r5_3b_an_orphaned_tool_result_is_claimed_on_the_next_pass(tmp_path, monkeypatch, caplog):
-    """R5-3b pin: the view's copy of a tool result was rewritten by the host, so it maps to no stored row
-    and the first leaf's frontier may stop on the call. After the commit end and start and three turns,
-    the next pass rehydrates the stored result (hidden=1) and claims it, with no publication conflict."""
+def test_r5_3b_unpaired_rewritten_tool_result_keeps_its_whole_group(tmp_path, monkeypatch, caplog):
+    """An unpaired rewritten result keeps its call/result group live across the commit boundary.
+
+    Sparse compaction may drain other rows but cannot claim the hidden result or
+    remove this group until occurrence evidence resolves the host rewrite.
+    """
     caplog.set_level(logging.INFO)
     monkeypatch.setattr(lcm_engine_module, "summarize_with_escalation", _stub_summarizer())
     conv = "agent:main:telegram:dm:7"
@@ -742,11 +744,15 @@ def test_r5_3b_an_orphaned_tool_result_is_claimed_on_the_next_pass(tmp_path, mon
                 host2.append(message)
                 engine.ingest(host2)
         caplog.clear()
-        engine.compress(list(host2), force=True)
+        before = engine._store.get_session_messages(sid, limit=100)
+        returned = engine.compress(list(host2), force=True)
         messages = [r.getMessage() for r in caplog.records]
         assert not [m for m in messages if "publication_invariant_conflict" in m]
-        assert any("store-complete leaf" in m and "hidden=1" in m for m in messages), messages
-        assert result_id in claimed()
+        assert engine._store.get_session_messages(sid, limit=100) == before
+        assert result_id not in claimed()
+        assert call in returned
+        assert {**result, "content": "[tool output projected by host]"} in returned
+        assert engine.get_status()["uid_coverage"]["unpaired_count"] == 1
     finally:
         engine.shutdown()
 
