@@ -1570,10 +1570,16 @@ move that fallback cursor.
 A summary records its exact source-ID set. The lifecycle frontier advances only
 across accounted-for stored rows; a later summarized row can sit beyond a retained
 gap without claiming that gap. Unpaired host rows stay in the active view while
-other attributable rows compact, and tool groups are kept together.
+other attributable rows compact, and tool groups are kept together. A later
+UID-less replay also checks these source sets before draining a resolved gap.
+Stored bytes and a differing UID-bound host representation share one source
+claim: a smaller-prefix retry that splits them is refused without publication.
+The occurrence stays active so a later successful full attempt can drain it.
 
 `lcm_status.uid_coverage` reports `paired_store_ids`, `superseded_store_ids`,
 `unpaired_count`, and `unpaired` entries containing only `store_id` and `uid`.
+When present, `covered_store_ids` identifies existing summary sources above the
+current frontier that this pass must not claim again.
 The compaction stop line includes the unpaired count and identifiers. This audit
 belongs to the last compaction of the bound profile/session and is empty before
 one has run or when that foreground audit is unavailable. It is not durable

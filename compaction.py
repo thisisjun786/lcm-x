@@ -2854,8 +2854,21 @@ class CompactionMixin:
                 self._last_leaf_content_filter_error = False
                 try:
                     full_map = self._compress_run.store_ids_by_message_id  # #1147 r1: use the full pass lineage.
-                    self._leaf_rescue_admit = lambda chunk: any(anchor_claims.get(id(m)) for m in chunk) or bool(
-                        self._get_store_ids_for_messages([sources.get(id(m), m) for m in chunk], full_map))
+                    claim_units: dict[int, set[int]] = {}
+                    for message in summary_input_chunk:
+                        for store_id in anchor_claims.get(id(message), ()):
+                            claim_units.setdefault(store_id, set()).add(id(message))
+
+                    def admit_rescue(chunk):
+                        present = {id(message) for message in chunk}
+                        # A rewritten UID occurrence and its durable bytes share
+                        # one source claim. Never publish half of that input unit.
+                        if any(unit & present and not unit <= present for unit in claim_units.values()):
+                            return False
+                        return any(anchor_claims.get(id(m)) for m in chunk) or bool(
+                            self._get_store_ids_for_messages([sources.get(id(m), m) for m in chunk], full_map))
+
+                    self._leaf_rescue_admit = admit_rescue
                     summary_kwargs: dict[str, Any] = {"focus_topic": focus_topic}
                     if threshold_full_sweep_active:
                         summary_kwargs["deadline"] = sweep_deadline
@@ -2993,8 +3006,9 @@ class CompactionMixin:
                     context_is_assembled=context_is_assembled,
                 )
             if getattr(self, "_uid_sparse_coverage", False):
-                published_frontier = self._lifecycle.get_by_conversation(
-                    self._conversation_id).current_frontier_store_id
+                published_state = self._lifecycle.get_by_conversation(self._conversation_id)
+                published_frontier = (published_state.current_frontier_store_id if published_state is not None
+                                      else self._last_compacted_store_id)
             self._last_compacted_store_id = published_frontier
             self._compress_host_rows_consumed += selected_raw_len
             self._compress_hidden_rows_consumed += len(compacted_chunk) - len(compacted_positions)

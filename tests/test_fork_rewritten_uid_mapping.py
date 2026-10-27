@@ -607,3 +607,62 @@ def test_uidless_replay_drains_sparse_gap_exactly_once(tmp_path, monkeypatch, re
         assert engine._store.get_session_messages('S') == before
     finally:
         engine.shutdown()
+
+
+@pytest.mark.parametrize('role', ['user', 'assistant', 'tool'])
+def test_rewrite_rescue_never_claims_only_one_representation(tmp_path, monkeypatch, role):
+    import hermes_lcm.engine as module
+    from hermes_lcm.tokens import count_messages_tokens
+    calls = []
+
+    def summarize(**kwargs):
+        calls.append(kwargs['text'])
+        if len(calls) == 1:
+            raise TimeoutError('synthetic first attempt timeout')
+        return 'Synthetic complete occurrence.', 1
+
+    monkeypatch.setattr(module, 'summarize_with_escalation', summarize)
+    engine = _engine(tmp_path)
+    try:
+        original = {'role': role, 'content': 'DURABLE_MARKER ' + 'stored ' * 500, 'message_uid': 'rewritten'}
+        host = {**original, 'content': 'REWRITE_MARKER ' + 'rewritten ' * 500}
+        prefix = []
+        if role == 'tool':
+            call = {'role': 'assistant', 'content': '', 'message_uid': 'call', 'tool_calls': [
+                {'id': 'synthetic-call', 'type': 'function', 'function': {'name': 'read', 'arguments': '{}'}}]}
+            prefix = [call]
+            original['tool_call_id'] = host['tool_call_id'] = 'synthetic-call'
+        tail = [{'role': 'user', 'content': 'synthetic fresh question', 'message_uid': 'tail-user'},
+                {'role': 'assistant', 'content': 'synthetic fresh answer', 'message_uid': 'tail-assistant'}]
+        ids = []
+        for row in [*prefix, original, *tail]:
+            sid = engine._store.append('S', _plain(row))
+            bind(engine, row['message_uid'], sid)
+            ids.append(sid)
+        before = engine._store.get_session_messages('S')
+        view = [*prefix, host, *tail]
+        engine._ingest_cursor = len(view)
+        if role == 'tool':
+            # The existing tool-group boundary already makes this indivisible.
+            with pytest.raises(TimeoutError, match='synthetic first attempt timeout'):
+                engine.compress(view, current_tokens=100000, force=True)
+            first = view
+        else:
+            first = engine.compress(view, current_tokens=100000, force=True)
+        # An unsafe prefix retry must neither make a paid call nor claim the source.
+        assert len(calls) == 1
+        assert engine._dag.get_session_nodes('S') == []
+        assert any(host['content'].strip() in m.get('content', '') for m in first)
+        assert engine._store.get_session_messages('S') == before
+        engine._ingest_cursor = len(view)
+        result = engine.compress(view, current_tokens=100000, force=True)
+        assert len(calls) == 2
+        assert 'DURABLE_MARKER' in calls[-1] and 'REWRITE_MARKER' in calls[-1]
+        sources = [sid for n in engine._dag.get_session_nodes('S')
+                   if n.source_type == 'messages' for sid in n.source_ids]
+        assert sorted(sources) == ids[:-2]
+        assert count_messages_tokens(result) < count_messages_tokens(view)
+        assert engine._store.get_session_messages('S') == before
+        assert all(any(row['content'] in m.get('content', '') for m in result) for row in tail)
+    finally:
+        engine.shutdown()

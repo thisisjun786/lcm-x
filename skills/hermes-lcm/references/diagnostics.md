@@ -67,3 +67,8 @@ ID when a retained gap is still open; that does not by itself mean compaction is
 wedged. Check actual before/after context lengths and tokens. A stop reporting
 `progress=none` must not be described as a successful reduction, even if a leaf
 was persisted. Do not copy message content into pairing diagnostics.
+
+`covered_store_ids`, when present, lists already-summarized sources above the
+frontier. UID-less recovery checks this set too. A shorter summary retry cannot
+claim only the stored half of a rewritten UID occurrence: that retry is refused,
+and the whole occurrence stays active for a later successful attempt.
