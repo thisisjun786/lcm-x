@@ -198,3 +198,33 @@ def test_backfill_does_not_conflate_tool_names(tmp_path):
     result = subprocess.run([sys.executable, str(script), '--db', str(tmp_path / 'lcm.db'),
                              '--state-db', str(tmp_path / 'state.db')], capture_output=True, text=True, check=True)
     assert json.loads(result.stdout)['candidates'] == 0
+
+
+def test_backfill_skips_lossy_redactions(tmp_path):
+    import json
+    import sqlite3
+    import subprocess
+    import sys
+    from pathlib import Path
+
+    _state_db(tmp_path, [('S', None, None)])
+    redaction = '[LCM sensitive redaction: name=password_assignment; chars=8; bytes=8]'
+    call = [{'id': 'synthetic-call', 'type': 'function', 'function': {'name': 'synthetic', 'arguments': redaction}}]
+    engine = _engine(tmp_path)
+    try:
+        engine.ingest([_m('user', redaction, 10), _m('assistant', 'synthetic call', 11, tool_calls=call)])
+        engine._store._ensure_host_uid_schema()
+    finally:
+        engine.shutdown()
+    state = sqlite3.connect(tmp_path / 'state.db')
+    state.execute('CREATE TABLE messages (session_id TEXT, message_uid TEXT, role TEXT, content TEXT, tool_call_id TEXT, tool_calls TEXT)')
+    state.executemany('INSERT INTO messages VALUES (?, ?, ?, ?, ?, ?)', [
+        ('S', 'synthetic-user', 'user', redaction, None, None),
+        ('S', 'synthetic-call', 'assistant', 'synthetic call', None, json.dumps(call)),
+    ])
+    state.commit()
+    state.close()
+    script = Path(__file__).resolve().parents[1] / 'scripts' / 'fork_backfill_uid_bindings.py'
+    args = [sys.executable, str(script), '--db', str(tmp_path / 'lcm.db'), '--state-db', str(tmp_path / 'state.db')]
+    result = subprocess.run(args, capture_output=True, text=True, check=True)
+    assert json.loads(result.stdout)['candidates'] == 0

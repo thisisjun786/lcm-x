@@ -22,6 +22,7 @@ spec = importlib.util.spec_from_file_location('hermes_lcm', root / '__init__.py'
 pkg = importlib.util.module_from_spec(spec)
 sys.modules['hermes_lcm'] = pkg
 from hermes_lcm.host_uid import HostUidShadowMixin, _valid_uid  # noqa: E402
+from hermes_lcm.reconcile import _has_lossy_redacted_identity  # noqa: E402
 
 
 def payload(row):
@@ -93,6 +94,8 @@ def main(argv=None):
             unknown_tools = {key[:4] for key in (*host_by_payload, *stored_by_payload)
                              if key[0] == 'tool' and key[4] is None}
             for key, host_rows in host_by_payload.items():
+                if _has_lossy_redacted_identity(key):
+                    continue
                 if key[0] == 'tool' and (key[4] is None or key[:4] in unknown_tools):
                     continue
                 stored_rows = stored_by_payload.get(key, [])
