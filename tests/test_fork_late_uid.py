@@ -104,12 +104,21 @@ def test_late_uid_compaction_has_no_unpaired_rows(tmp_path, monkeypatch):
     try:
         first = _m('user', 'synthetic first ' + 'word ' * 500, 10.0)
         others = [_m('assistant', f'synthetic {i} ' + 'word ' * 500, 11.0 + i, f'uid-{i}') for i in range(6)]
+        # One UID-less later occurrence appears before the user at compaction.
+        # The legacy positional fallback advances past the user's stored row;
+        # a canonical late UID identifies it independently of view order.
+        others[0].pop('message_uid')
         engine.ingest([first, *others])
-        view = [{**first, 'message_uid': 'late-uid'}, *others]
-        engine.ingest(view)
+        stamped = [{**first, 'message_uid': 'late-uid'}, *others]
+        engine.ingest(stamped)
+        # A later host view may omit the source timestamp; the UID must still pair it.
+        view = [others[0], {k: v for k, v in stamped[0].items() if k != 'timestamp'}, *others[1:]]
         engine.compress(view, current_tokens=100000, force=True)
         audit = json.loads(lcm_status({}, engine=engine))['uid_coverage']
-        assert audit['unpaired_count'] == 0
+        assert audit['context_shrank'] is True
+        assert audit['unpaired_count'] == 0, audit
+        assert audit['unpaired'] == []
+        assert len(audit['paired_store_ids']) == 7
     finally:
         engine.shutdown()
 
