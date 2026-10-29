@@ -36,7 +36,12 @@ def payload(row):
             return None
     else:
         calls = ''
-    return row['role'], row['content'], row['tool_call_id'] or '', calls
+    name = row['tool_name'] if 'tool_name' in row.keys() else None
+    if row['role'] != 'tool':
+        name = ''
+    elif not isinstance(name, str) or not name:
+        name = None
+    return row['role'], row['content'], row['tool_call_id'] or '', calls, name
 
 
 def main(argv=None):
@@ -85,7 +90,11 @@ def main(argv=None):
             for binding in conn.execute('SELECT store_id, uid FROM host_uid_bindings WHERE lineage_key = ?', (lineage,)):
                 bound_stores.add(binding['store_id'])
                 bound_uids.add(binding['uid'])
+            unknown_tools = {key[:4] for key in (*host_by_payload, *stored_by_payload)
+                             if key[0] == 'tool' and key[4] is None}
             for key, host_rows in host_by_payload.items():
+                if key[0] == 'tool' and (key[4] is None or key[:4] in unknown_tools):
+                    continue
                 stored_rows = stored_by_payload.get(key, [])
                 if len(host_rows) != 1 or len(stored_rows) != 1:
                     continue

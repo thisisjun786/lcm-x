@@ -172,3 +172,29 @@ def test_backfill_counts_uidless_host_occurrences(tmp_path):
     result = subprocess.run([sys.executable, str(script), '--db', str(tmp_path / 'lcm.db'),
                              '--state-db', str(tmp_path / 'state.db')], capture_output=True, text=True, check=True)
     assert json.loads(result.stdout)['candidates'] == 0
+
+
+def test_backfill_does_not_conflate_tool_names(tmp_path):
+    import json
+    import sqlite3
+    import subprocess
+    import sys
+    from pathlib import Path
+
+    _state_db(tmp_path, [('S', None, None)])
+    engine = _engine(tmp_path)
+    try:
+        engine.ingest([_m('tool', 'synthetic shared output', 10, tool_call_id='call-synthetic', tool_name='terminal')])
+        engine._store._ensure_host_uid_schema()
+    finally:
+        engine.shutdown()
+    state = sqlite3.connect(tmp_path / 'state.db')
+    state.execute('CREATE TABLE messages (session_id TEXT, message_uid TEXT, role TEXT, content TEXT, tool_call_id TEXT, tool_calls TEXT, tool_name TEXT)')
+    state.execute('INSERT INTO messages VALUES (?, ?, ?, ?, ?, ?, ?)',
+                  ('S', 'synthetic-browser', 'tool', 'synthetic shared output', 'call-synthetic', None, 'browser'))
+    state.commit()
+    state.close()
+    script = Path(__file__).resolve().parents[1] / 'scripts' / 'fork_backfill_uid_bindings.py'
+    result = subprocess.run([sys.executable, str(script), '--db', str(tmp_path / 'lcm.db'),
+                             '--state-db', str(tmp_path / 'state.db')], capture_output=True, text=True, check=True)
+    assert json.loads(result.stdout)['candidates'] == 0
