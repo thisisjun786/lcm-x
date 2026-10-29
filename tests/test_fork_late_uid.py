@@ -71,8 +71,8 @@ def test_backfill_dry_run_and_apply(tmp_path):
     finally:
         engine.shutdown()
     state = sqlite3.connect(tmp_path / 'state.db')
-    state.execute('CREATE TABLE messages (session_id TEXT, message_uid TEXT, role TEXT, content TEXT, tool_call_id TEXT, tool_calls TEXT)')
-    state.execute('INSERT INTO messages VALUES (?, ?, ?, ?, ?, ?)', ('S', 'synthetic-uid', 'user', 'synthetic backfill', None, None))
+    state.execute('CREATE TABLE messages (session_id TEXT, message_uid TEXT, role TEXT, content TEXT, tool_call_id TEXT, tool_calls TEXT, timestamp REAL)')
+    state.execute('INSERT INTO messages VALUES (?, ?, ?, ?, ?, ?, ?)', ('S', 'synthetic-uid', 'user', 'synthetic backfill', None, None, 10))
     state.commit()
     state.close()
     script = Path(__file__).resolve().parents[1] / 'scripts' / 'fork_backfill_uid_bindings.py'
@@ -228,3 +228,75 @@ def test_backfill_skips_lossy_redactions(tmp_path):
     args = [sys.executable, str(script), '--db', str(tmp_path / 'lcm.db'), '--state-db', str(tmp_path / 'state.db')]
     result = subprocess.run(args, capture_output=True, text=True, check=True)
     assert json.loads(result.stdout)['candidates'] == 0
+
+
+import pytest
+
+
+@pytest.mark.parametrize('case,expected', [
+    ('positive', 1), ('uidless', 0), ('tool-name', 0), ('redacted-content', 0),
+    ('redacted-arguments', 0), ('timestamp', 0), ('pruned', 0), ('persisted', 0),
+    ('todo', 0), ('model-switch', 0), ('unparseable', 0), ('missing-tool-name', 0),
+    ('summary-carrier', 0), ('out-of-band', 0), ('no-observed-at', 1),
+])
+def test_backfill_identity_table(tmp_path, case, expected):
+    import json
+    import sqlite3
+    import subprocess
+    import sys
+    from pathlib import Path
+    from hermes_lcm import reconcile
+
+    _state_db(tmp_path, [('S', None, None)])
+    row = dict(role='user', content='synthetic identity', tool_call_id=None, tool_calls=None, tool_name=None)
+    redaction = '[LCM sensitive redaction: name=password_assignment; chars=8; bytes=8]'
+    if case in ('tool-name', 'missing-tool-name'):
+        row.update(role='tool', tool_call_id='synthetic-call', tool_name='terminal')
+    if case == 'redacted-content':
+        row['content'] = redaction
+    if case == 'redacted-arguments':
+        row.update(role='assistant', tool_calls=[{'id': 'synthetic', 'function': {'arguments': redaction}}])
+    if case == 'pruned':
+        row['content'] = reconcile._HERMES_PRUNED_TOOL_PLACEHOLDER
+    if case == 'persisted':
+        row['content'] = '<persisted-output>\nThis tool result was too large (99 characters, 1 KB).\nFull output saved to: synthetic\n</persisted-output>'
+    if case == 'todo':
+        row['content'] = 'synthetic\n\n' + reconcile._PRESERVED_TODO_CONTEXT_PREFIX
+    if case == 'model-switch':
+        row['content'] = reconcile._MODEL_SWITCH_NOTIFICATION_PREFIX + 'synthetic] text'
+    if case == 'out-of-band':
+        row['content'] = 'synthetic ' + reconcile._OOB_MESSAGE_BLOCK_MARKER + ']text[/OUT-OF-BAND USER MESSAGE]'
+    if case == 'summary-carrier':
+        row['content'] = '[Recent Summary (d0, node 1)]\nsynthetic\n\nreal user'
+    engine = _engine(tmp_path)
+    try:
+        engine._store.append('S', {**row, 'timestamp': 10}, conversation_id='conv')
+        engine._store._ensure_host_uid_schema()
+        if case == 'no-observed-at':
+            engine._store._conn.execute('UPDATE messages SET observed_at = NULL')
+            engine._store._conn.commit()
+    finally:
+        engine.shutdown()
+    state = sqlite3.connect(tmp_path / 'state.db')
+    state.execute('CREATE TABLE messages (session_id TEXT, message_uid TEXT, role TEXT, content TEXT, tool_call_id TEXT, tool_calls TEXT, tool_name TEXT, timestamp REAL)')
+    calls = json.dumps(row['tool_calls']) if row['tool_calls'] else None
+    host_name = 'browser' if case == 'tool-name' else None if case == 'missing-tool-name' else row['tool_name']
+    if case == 'unparseable':
+        calls = '{broken'
+    values = ('S', 'synthetic-uid', row['role'], row['content'], row['tool_call_id'], calls, host_name,
+              20 if case == 'timestamp' else 10)
+    state.execute('INSERT INTO messages VALUES (?, ?, ?, ?, ?, ?, ?, ?)', values)
+    if case == 'uidless':
+        state.execute('INSERT INTO messages VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+                      (values[0], None, *values[2:]))
+    state.commit()
+    state.close()
+    script = Path(__file__).resolve().parents[1] / 'scripts' / 'fork_backfill_uid_bindings.py'
+    result = subprocess.run([sys.executable, str(script), '--db', str(tmp_path / 'lcm.db'),
+                             '--state-db', str(tmp_path / 'state.db')], capture_output=True, text=True, check=True)
+    data = json.loads(result.stdout)
+    assert data['candidates'] == expected
+    if case == 'positive':
+        assert data['timestamp_matched'] == 1 and data['unique_without_timestamp'] == 0
+    if case == 'no-observed-at':
+        assert data['timestamp_matched'] == 0 and data['unique_without_timestamp'] == 1

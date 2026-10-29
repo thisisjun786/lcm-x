@@ -22,27 +22,53 @@ spec = importlib.util.spec_from_file_location('hermes_lcm', root / '__init__.py'
 pkg = importlib.util.module_from_spec(spec)
 sys.modules['hermes_lcm'] = pkg
 from hermes_lcm.host_uid import HostUidShadowMixin, _valid_uid  # noqa: E402
-from hermes_lcm.reconcile import _has_lossy_redacted_identity  # noqa: E402
+from hermes_lcm.reconcile import (  # noqa: E402
+    _has_lossy_redacted_identity, _HERMES_PRUNED_TOOL_PLACEHOLDER,
+    _is_hermes_persisted_output_marker, _PRESERVED_TODO_CONTEXT_PREFIX,
+    _MODEL_SWITCH_NOTIFICATION_PREFIX, _OOB_MESSAGE_BLOCK_MARKER,
+)
+from hermes_lcm.store import _normalize_observed_at  # noqa: E402
 
 
-def payload(row):
-    """Conservative exact payload subset: do not reconstruct redacted or rewritten data."""
-    if not isinstance(row['role'], str) or not isinstance(row['content'], str):
+def collision_key(row):
+    """Group all plausible collisions, even rows we cannot admit.
+
+    Any two rows with the same admitted identity share a collision key. Ignoring
+    calls and tool name deliberately widens the group for malformed or unknown rows.
+    """
+    return row['role'], row['content'], row['tool_call_id'] or ''
+
+
+def admit(row):
+    """Return a lossless raw identity, or None when equality cannot prove identity."""
+    role, content = row['role'], row['content']
+    if not isinstance(role, str) or not isinstance(content, str):
+        return None
+    # Summary carriers start with a bracket; conservatively exclude every
+    # bracket-leading payload without requiring a host engine or DAG lookup.
+    if (content.startswith('[') or content == _HERMES_PRUNED_TOOL_PLACEHOLDER
+            or _is_hermes_persisted_output_marker(content)
+            or _PRESERVED_TODO_CONTEXT_PREFIX in content
+            or _MODEL_SWITCH_NOTIFICATION_PREFIX in content or _OOB_MESSAGE_BLOCK_MARKER in content):
         return None
     calls = row['tool_calls']
     if calls:
         try:
-            calls = json.dumps(json.loads(calls), sort_keys=True, separators=(',', ':'))
-        except (TypeError, ValueError):
+            parsed = json.loads(calls)
+            if not isinstance(parsed, list):
+                return None
+            calls = json.dumps(parsed, sort_keys=True, separators=(',', ':'), ensure_ascii=False)
+        except (TypeError, ValueError, RecursionError):
             return None
     else:
         calls = ''
     name = row['tool_name'] if 'tool_name' in row.keys() else None
-    if row['role'] != 'tool':
-        name = ''
-    elif not isinstance(name, str) or not name:
-        name = None
-    return row['role'], row['content'], row['tool_call_id'] or '', calls, name
+    if role == 'tool' and (not isinstance(name, str) or not name):
+        return None
+    if name is not None and not isinstance(name, str):
+        return None
+    identity = (role, content, row['tool_call_id'] or '', calls, name or '')
+    return None if _has_lossy_redacted_identity(identity) else identity
 
 
 def main(argv=None):
@@ -72,46 +98,45 @@ def main(argv=None):
             root_id, _ = reader._host_uid_read_lineage(state_path, str(sid))
             if root_id is not None:
                 groups[f'{tag}:{root_id}'].append(str(sid))
-        total = 0
+        counts = {'timestamp_matched': 0, 'unique_without_timestamp': 0}
         for lineage, ids in groups.items():
-            host_by_payload, host_by_uid, stored_by_payload = defaultdict(list), defaultdict(list), defaultdict(list)
+            host_groups, stored_groups, uid_counts = defaultdict(list), defaultdict(list), defaultdict(int)
             for sid in ids:
                 for row in state.execute('SELECT * FROM messages WHERE session_id = ?', (sid,)):
-                    uid = row['message_uid']
-                    key = payload(row)
-                    if _valid_uid(uid):
-                        host_by_uid[uid].append(row)
-                    if key is not None:
-                        host_by_payload[key].append(row)
+                    host_groups[collision_key(row)].append(row)
+                    if _valid_uid(row['message_uid']):
+                        uid_counts[row['message_uid']] += 1
                 for row in conn.execute('SELECT * FROM messages WHERE session_id = ?', (sid,)):
-                    key = payload(row)
-                    if key is not None:
-                        stored_by_payload[key].append(row)
-            bound_stores, bound_uids = set(), set()
-            for binding in conn.execute('SELECT store_id, uid FROM host_uid_bindings WHERE lineage_key = ?', (lineage,)):
-                bound_stores.add(binding['store_id'])
-                bound_uids.add(binding['uid'])
-            unknown_tools = {key[:4] for key in (*host_by_payload, *stored_by_payload)
-                             if key[0] == 'tool' and key[4] is None}
-            for key, host_rows in host_by_payload.items():
-                if _has_lossy_redacted_identity(key):
-                    continue
-                if key[0] == 'tool' and (key[4] is None or key[:4] in unknown_tools):
-                    continue
-                stored_rows = stored_by_payload.get(key, [])
+                    stored_groups[collision_key(row)].append(row)
+            bound_uids = {row['uid'] for row in conn.execute(
+                'SELECT uid FROM host_uid_bindings')}
+            for key, host_rows in host_groups.items():
+                stored_rows = stored_groups.get(key, [])
                 if len(host_rows) != 1 or len(stored_rows) != 1:
                     continue
-                uid, sid = host_rows[0]['message_uid'], stored_rows[0]['store_id']
-                if not _valid_uid(uid) or len(host_by_uid[uid]) != 1 or uid in bound_uids or sid in bound_stores:
+                host, stored = host_rows[0], stored_rows[0]
+                identity = admit(host)
+                if identity is None or identity != admit(stored):
                     continue
-                # A store row associated with another home is not ours to claim.
+                uid, sid = host['message_uid'], stored['store_id']
+                if not _valid_uid(uid) or uid_counts[uid] != 1 or uid in bound_uids:
+                    continue
                 if conn.execute('SELECT 1 FROM host_uid_bindings WHERE store_id = ? LIMIT 1', (sid,)).fetchone():
                     continue
-                total += 1
+                observed = stored['observed_at']
+                if observed is not None:
+                    host_stamp = _normalize_observed_at(host['timestamp']) if 'timestamp' in host.keys() else None
+                    if host_stamp is None or host_stamp != _normalize_observed_at(observed):
+                        continue
+                    path = 'timestamp_matched'
+                else:
+                    path = 'unique_without_timestamp'
+                counts[path] += 1
                 if args.apply:
                     conn.execute("INSERT INTO host_uid_bindings (store_id,uid,lineage_key,kind,binding_version,proof_kind,created_at) VALUES (?,?,?,'canonical',1,'backfill',?)", (sid, uid, lineage, time.time()))
         conn.commit()
-        print(json.dumps({'candidates': total, 'applied': total if args.apply else 0}))
+        total = sum(counts.values())
+        print(json.dumps({'candidates': total, 'applied': total if args.apply else 0, **counts}))
     finally:
         conn.close()
         state.close()
