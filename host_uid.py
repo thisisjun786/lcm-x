@@ -218,11 +218,24 @@ class HostUidShadowMixin:
             return None
         try:
             decided = set(range(max(0, start), len(messages))) | set((plan or {}).get("matched") or ())  # F3: + prefix
+            # Revisit only rows stored without a UID by this engine. Existing
+            # bound prefixes retain their established shadow accounting.
+            from .store import _normalize_observed_at
+
+            unstamped = (self.__dict__.get("_host_uid_unstamped", {})
+                         if self.__dict__.get("_host_uid_unstamped_session") == (session_id or self._session_id)
+                         else {})
+            late_prefix = {i for i in range(min(start, cursor, len(messages)))
+                           if _valid_uid(messages[i].get("message_uid"))
+                           and (_normalize_observed_at(messages[i].get("timestamp")),
+                                hashlib.sha256(repr(self._message_replay_identity(
+                                    identity_messages[i], strip_carrier=False)).encode()).digest()) in unstamped}
+            decided.update(late_prefix)
             values = {idx: messages[idx].get("message_uid") for idx in sorted(decided) if idx < len(messages)}
             entries = {idx: value for idx, value in values.items() if value is not None}
             return {"entries": entries, "no_uid": len(values) - len(entries), "messages": messages,
                     "identity": identity_messages, "cursor": cursor, "plan": plan or {},
-                    "tool_segment": set(tool_segment or ()), "session_id": session_id}
+                    "tool_segment": set(tool_segment or ()), "session_id": session_id, "late_prefix": late_prefix}
         except Exception as exc:
             self._host_uid_count(Counter(errors=1), exc)
             return None
@@ -233,6 +246,23 @@ class HostUidShadowMixin:
             return
         delta, error = Counter({"skipped.no_uid": capture["no_uid"]}), None
         try:
+            from .store import _normalize_observed_at
+
+            session = capture["session_id"] or self._session_id
+            if self.__dict__.get("_host_uid_unstamped_session") != session:
+                self._host_uid_unstamped_session = session
+                self._host_uid_unstamped = {}
+            unstamped = self.__dict__.setdefault("_host_uid_unstamped", {})
+            for idx in stored_at or {}:
+                message = capture["messages"][idx]
+                if message.get("message_uid") is None:
+                    stamp = _normalize_observed_at(message.get("timestamp"))
+                    if stamp is not None:
+                        key = (stamp, hashlib.sha256(repr(self._message_replay_identity(
+                            capture["identity"][idx], strip_carrier=False)).encode()).digest())
+                        unstamped[key] = None
+                        while len(unstamped) > 4096:
+                            unstamped.pop(next(iter(unstamped)))
             error = self._host_uid_classify(capture, stored_at or {}, set(remainders or ()), delta)
         except Exception as exc:
             delta["errors"] += 1
@@ -274,7 +304,49 @@ class HostUidShadowMixin:
         self._host_uid_fetch(by_store, fetched)  # one batched read for the whole decided range
         targets = {idx: int(matched[idx][0]["store_id"]) for idx in valid
                    if idx not in stored_at and len(matched.get(idx) or ()) == 1}
-        held = store.host_uid_uids_of_stores(lineage, set(targets.values()))
+        held = store.host_uid_uids_of_stores(lineage, set(targets.values()),
+                                              ("canonical", "version", "alias_candidate"))
+        # For a cursor replay without a row map, use #436's timestamp and
+        # payload identity only when both the host and stored occurrence are unique.
+        from .store import _normalize_observed_at
+
+        missing = {i for i in valid if i in capture.get("late_prefix", ()) and i not in stored_at
+                   and not matched.get(i) and not bindings.get(valid[i]) and valid[i] not in engine}
+        possible = missing | {i for i in targets if not bindings.get(valid[i]) and valid[i] not in engine}
+        stamps = {i: _normalize_observed_at(messages[i].get("timestamp")) for i in possible}
+        stamps = {i: stamp for i, stamp in stamps.items() if stamp is not None}
+        eligible = set()
+        if stamps:
+            candidates = store.find_rows_by_observed_at(
+                str(self._conversation_id or ""), [str(self._session_id), *self._identity_anchor_chain()],
+                list(stamps.values()))
+            self._load_host_rewrite_overrides(candidates)
+            host_counts = Counter((_normalize_observed_at(message.get("timestamp")),
+                                   self._message_replay_identity(identity[j], strip_carrier=False))
+                                  for j, message in enumerate(messages))
+            uid_counts = Counter(m.get("message_uid") for m in messages if _valid_uid(m.get("message_uid")))
+            indexed = defaultdict(set)
+            rows_by_id = {}
+            for row in candidates:
+                sid = int(row["store_id"])
+                rows_by_id[sid] = row
+                for form in self._stored_row_forms(row):
+                    indexed[(row.get("observed_at"), form)].add(sid)
+            for idx, stamp in stamps.items():
+                ident = self._message_replay_identity(identity[idx], strip_carrier=False)
+                hits = indexed.get((stamp, ident), set())
+                if (_lossy_identity(ident) or host_counts[(stamp, ident)] != 1
+                        or uid_counts[valid[idx]] != 1 or len(hits) != 1):
+                    continue
+                sid = next(iter(hits))
+                if idx in missing:
+                    matched = dict(matched)
+                    matched[idx] = [rows_by_id[sid]]
+                    targets[idx] = sid
+                if targets.get(idx) == sid:
+                    eligible.add(idx)
+            held.update(store.host_uid_uids_of_stores(lineage, set(targets.values()),
+                                                       ("canonical", "version", "alias_candidate")))
         writes, checks, aliases = [], [], []
 
         def bind(store_id, uid, kind, proof) -> None:
@@ -335,9 +407,11 @@ class HostUidShadowMixin:
                 target = targets[idx]
                 if (held.get(target, set()) | by_store.get(target, set())) - {uid}:
                     aliases.append((idx, uid, target))
-                else:
+                elif idx in eligible and self._host_uid_bytes_match([target], identity[idx], fetched) is not None:
                     delta["replay.unbound.agree_bind"] += 1
-                    bind(target, uid, "canonical", "anchor_replay")
+                    bind(target, uid, "canonical", "late_uid")
+                else:
+                    delta["replay.unbound.unverified.bytes"] += 1
             else:
                 delta["replay.skipped.unmapped_replay" if unmapped else "skipped.not_stored"] += 1
         store.add_host_uid_bindings(lineage, writes)

@@ -1118,8 +1118,11 @@ class MessageStore:
         self._host_uid_write(lambda conn: conn.executemany(
             "INSERT OR IGNORE INTO host_uid_bindings(store_id, uid, lineage_key, kind, binding_version, "
             "proof_kind, created_at) SELECT ?, ?, ?, ?, 1, ?, ? WHERE NOT EXISTS (SELECT 1 FROM "
-            "host_uid_bindings WHERE store_id = ? AND uid = ? AND lineage_key = ? AND kind = ?)",
-            [(int(store_id), uid, lineage_key, kind, proof_kind, now, int(store_id), uid, lineage_key, kind)
+            "host_uid_bindings WHERE store_id = ? AND uid = ? AND lineage_key = ? AND kind = ?) "
+            "AND (? != 'late_uid' OR NOT EXISTS (SELECT 1 FROM host_uid_bindings WHERE lineage_key = ? "
+            "AND kind IN ('canonical','version','alias_candidate') AND (store_id = ? OR uid = ?)))",
+            [(int(store_id), uid, lineage_key, kind, proof_kind, now, int(store_id), uid, lineage_key, kind,
+              proof_kind, lineage_key, int(store_id), uid)
              for store_id, uid, kind, proof_kind in rows]))
 
     def _host_uid_write(self, write: Callable[[sqlite3.Connection], Any]) -> None:
