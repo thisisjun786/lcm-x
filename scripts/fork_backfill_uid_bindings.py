@@ -72,11 +72,11 @@ def main(argv=None):
             for sid in ids:
                 for row in state.execute('SELECT * FROM messages WHERE session_id = ?', (sid,)):
                     uid = row['message_uid']
+                    key = payload(row)
                     if _valid_uid(uid):
-                        key = payload(row)
                         host_by_uid[uid].append(row)
-                        if key is not None:
-                            host_by_payload[key].append(row)
+                    if key is not None:
+                        host_by_payload[key].append(row)
                 for row in conn.execute('SELECT * FROM messages WHERE session_id = ?', (sid,)):
                     key = payload(row)
                     if key is not None:
@@ -90,7 +90,7 @@ def main(argv=None):
                 if len(host_rows) != 1 or len(stored_rows) != 1:
                     continue
                 uid, sid = host_rows[0]['message_uid'], stored_rows[0]['store_id']
-                if len(host_by_uid[uid]) != 1 or uid in bound_uids or sid in bound_stores:
+                if not _valid_uid(uid) or len(host_by_uid[uid]) != 1 or uid in bound_uids or sid in bound_stores:
                     continue
                 # A store row associated with another home is not ours to claim.
                 if conn.execute('SELECT 1 FROM host_uid_bindings WHERE store_id = ? LIMIT 1', (sid,)).fetchone():

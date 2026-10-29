@@ -226,7 +226,7 @@ class HostUidShadowMixin:
                          if self.__dict__.get("_host_uid_unstamped_session") == (session_id or self._session_id)
                          else {})
             late_prefix = {i for i in range(min(start, cursor, len(messages)))
-                           if _valid_uid(messages[i].get("message_uid"))
+                           if unstamped and _valid_uid(messages[i].get("message_uid"))
                            and (_normalize_observed_at(messages[i].get("timestamp")),
                                 hashlib.sha256(repr(self._message_replay_identity(
                                     identity_messages[i], strip_carrier=False)).encode()).digest()) in unstamped}

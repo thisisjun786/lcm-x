@@ -144,3 +144,31 @@ def test_backfill_skips_ambiguous_and_bound_rows(tmp_path):
     assert json.loads(dry.stdout)['candidates'] == 0
     denied = subprocess.run([*args, '--apply'], capture_output=True, text=True)
     assert denied.returncode != 0
+
+
+def test_backfill_counts_uidless_host_occurrences(tmp_path):
+    import json
+    import sqlite3
+    import subprocess
+    import sys
+    from pathlib import Path
+
+    _state_db(tmp_path, [('S', None, None)])
+    engine = _engine(tmp_path)
+    try:
+        engine.ingest([_m('user', 'synthetic same', 10)])
+        engine._store._ensure_host_uid_schema()
+    finally:
+        engine.shutdown()
+    state = sqlite3.connect(tmp_path / 'state.db')
+    state.execute('CREATE TABLE messages (session_id TEXT, message_uid TEXT, role TEXT, content TEXT, tool_call_id TEXT, tool_calls TEXT)')
+    state.executemany('INSERT INTO messages VALUES (?, ?, ?, ?, ?, ?)', [
+        ('S', None, 'user', 'synthetic same', None, None),
+        ('S', 'second-occurrence', 'user', 'synthetic same', None, None),
+    ])
+    state.commit()
+    state.close()
+    script = Path(__file__).resolve().parents[1] / 'scripts' / 'fork_backfill_uid_bindings.py'
+    result = subprocess.run([sys.executable, str(script), '--db', str(tmp_path / 'lcm.db'),
+                             '--state-db', str(tmp_path / 'state.db')], capture_output=True, text=True, check=True)
+    assert json.loads(result.stdout)['candidates'] == 0
