@@ -23,6 +23,12 @@ summaries = retained.summaries
 host_estimator = fit.host_estimator
 
 
+@pytest.fixture(autouse=True)
+def retained_stop_control(monkeypatch):
+    # B2: retain the no-call stop fixture while the product escapes by default.
+    monkeypatch.setattr(retained.LCMEngine, "_retained_escape_enabled", False)
+
+
 @pytest.fixture
 def no_call(tmp_path, monkeypatch, summaries):
     engine, view = retained._reorder(tmp_path, False)
@@ -327,7 +333,7 @@ def test_status_drops_previous_session_fit(no_call, boundary):
                          ({"count": 0, "count_lost": True}, True),
                          ({"count": 0, "projected_count": 1}, True), ({"count": "damaged"}, True)])
 def test_doctor_surfaces_agree(tmp_path, record, expected):
-    engine = retained._engine(tmp_path, False, context_threshold=0.75)
+    engine = retained._engine(tmp_path, False, context_threshold=0.75, embeddings_enabled=False)
     try:
         engine.ingest([{"role": "user", "content": "ordinary stored turn"}])
         baseline_command_status = handle_lcm_command("doctor", engine).splitlines()[1]

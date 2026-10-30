@@ -23,6 +23,7 @@ R6 (supersede on positive evidence) hooks the host-rewrite capture.
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 import sqlite3
@@ -60,10 +61,20 @@ def identity_anchor_enabled() -> bool:
     return _parse_bool_env("LCM_IDENTITY_ANCHOR", True, unknown=True, true_values=())
 
 
+def _ws_equivalent(stored, identity) -> bool:
+    return (identity[0] == "user" and bool(identity[1].strip()) and stored != identity
+            and stored[1].strip() == identity[1].strip() and tuple(stored[2:]) == tuple(identity[2:]))
+
+
 class IdentityAnchorMixin:
     """Mixed into LCMEngine; reads ``self._store``, the reconcile identity helpers and ``_state_db_path``."""
 
     # -- lineage (R7) --------------------------------------------------------
+
+    def _identity_anchor_chain_cached(self) -> list[str]:
+        """Verified ancestors already cached for this binding; never performs I/O."""
+        cached = getattr(self, "_identity_anchor_chain_cache", None)
+        return cached[1] if cached is not None and cached[0] == str(self._session_id or "") else []
 
     def _identity_anchor_chain(self) -> list[str]:
         """The bound session's verified compression ancestors, nearest first: host state.db
@@ -184,6 +195,69 @@ class IdentityAnchorMixin:
             memo[store_id] = {form[1] for form in forms if not _lossy(form)}
         return memo[store_id]
 
+    def _observe_alias_uid_conflicts(self, rows, canonical_stamps, keys_of, occurrences, messages):
+        """Count conflicting alias edges; never change matching or persisted state (#1519)."""
+        try:
+            self._count_alias_uid_conflicts(rows, canonical_stamps, keys_of, occurrences, messages)
+        except Exception as exc:
+            logger.debug("LCM identity-anchor host UID observation unavailable (%s)", type(exc).__name__)
+
+    def _count_alias_uid_conflicts(self, rows, canonical_stamps, keys_of, occurrences, messages):
+        from .config import host_message_uid_mode
+        from .host_uid import _valid_uid
+
+        mode = host_message_uid_mode()
+        if mode == "off":
+            return
+        incoming = {idx: messages[idx].get("message_uid") for idx, _key in occurrences
+                    if _valid_uid(messages[idx].get("message_uid"))}
+        incoming_keys = {key for idx, key in occurrences if idx in incoming}
+        row_keys = {id(r): set(keys_of(r)) for r in rows} if incoming_keys else {}
+        if canonical_stamps is None:  # discarded provenance cannot justify extra diagnostic reads
+            return
+        aliases = [r for r in rows
+                   if int(r["store_id"]) in canonical_stamps
+                   and _normalize_observed_at(canonical_stamps[int(r["store_id"])]) != float(r["observed_at"])
+                   and incoming_keys.intersection(row_keys.get(id(r), ()))]
+        if not aliases:
+            return
+        lineage, _problem = self._host_uid_lineage_key()
+        if lineage is None:
+            return
+        if not self._store._host_uid_table_exists():
+            return
+        # JSON key sets keep these two indexed reads bounded even above SQLite's bind-variable limit.
+        canonical = defaultdict(set)
+        for sid, uid in self._store._conn.execute(
+            "SELECT store_id, uid FROM host_uid_bindings INDEXED BY idx_host_uid_store "
+            "WHERE store_id IN (SELECT value FROM json_each(?)) AND lineage_key = ? AND kind = 'canonical'",
+            (json.dumps(sorted({int(r["store_id"]) for r in aliases})), lineage),
+        ):
+            canonical[int(sid)].add(str(uid))
+        if not canonical:
+            return
+        uids = set(incoming.values()) | {uid for values in canonical.values() for uid in values if _valid_uid(uid)}
+        engine = {str(uid) for (uid,) in self._store._conn.execute(
+            "SELECT uid FROM host_uid_bindings WHERE lineage_key = ? AND kind = 'engine' "
+            "AND uid IN (SELECT value FROM json_each(?))", (lineage, json.dumps(sorted(uids))))}
+        incoming = {idx: uid for idx, uid in incoming.items() if uid not in engine}
+        canonical = {sid: {uid for uid in values if _valid_uid(uid) and uid not in engine}
+                     for sid, values in canonical.items()}
+        by_key = defaultdict(Counter)
+        for idx, key in occurrences:
+            if idx in incoming:
+                by_key[key][incoming[idx]] += 1
+        totals = {key: sum(uids.values()) for key, uids in by_key.items()}
+        # Count via the key index without materialising the potentially quadratic edge set.
+        count = 0
+        for row in aliases:
+            known = canonical.get(int(row["store_id"]), ())
+            if len(known) == 1:
+                uid = next(iter(known))
+                count += sum(totals.get(key, 0) - by_key[key][uid] for key in row_keys[id(row)])
+        if count:
+            logger.debug("LCM identity-anchor host UID shadow would reject alias edges: count=%d", count)
+
     def _identity_anchor_prematch(self, messages, identity_messages, cursor: int, audit_from: Optional[int] = None,
                                   *, accepted_prefix: int = 0) -> Dict[str, Any]:
         """Rows at or after ``cursor`` recognised as replays of stored occurrences, plus the R3
@@ -273,8 +347,33 @@ class IdentityAnchorMixin:
         forms_of = {id(r): forms for pairs in by_stamp.values() for r, forms in pairs}
         occurrences = [(idx, (stamps[idx], identity_at(idx))) for idx in sorted(stamps)
                        if stamps[idx] in wanted and identity_at(idx) is not None]
-        for store_id, idx in _match_occurrences(
-                rows, lambda r: {(float(r["observed_at"]), form) for form in forms_of[id(r)]}, occurrences).items():
+        def keys_of(r):
+            return {(float(r["observed_at"]), form) for form in forms_of[id(r)]}
+        ws_index = None
+
+        def diag_keys_of(r):
+            nonlocal ws_index
+            if ws_index is None:  # Only reached after the observer's mode/valid-UID gates.
+                from .host_uid import _valid_uid
+
+                ws_index = defaultdict(set)
+                for idx, key in occurrences:
+                    if not _valid_uid(identity_messages[idx].get("message_uid")):
+                        continue
+                    ident = key[1]
+                    if ident[0] == "user" and ident[1].strip():
+                        ws_index[(key[0], ident[1].strip(), tuple(ident[2:]))].add(key)
+            keys = keys_of(r)
+            if r.get("role") == "user":
+                forms = forms_of[id(r)]  # A singleton is necessarily the exact stored identity.
+                stored = next(iter(forms)) if len(forms) == 1 else self._message_replay_identity(r, stored_row=True)
+                bucket = (float(r["observed_at"]), stored[1].strip(), tuple(stored[2:]))
+                keys.update(key for key in ws_index.get(bucket, ()) if _ws_equivalent(stored, key[1]))
+            return keys
+
+        self._observe_alias_uid_conflicts(
+            rows, getattr(rows, "canonical_stamps", None), diag_keys_of, occurrences, identity_messages)
+        for store_id, idx in _match_occurrences(rows, keys_of, occurrences).items():
             consumed.add(store_id)
             matched[idx] = [next(r for r, _forms in by_stamp[stamps[idx]] if int(r["store_id"]) == store_id)]
             if idx >= start:
@@ -802,8 +901,7 @@ class IdentityAnchorMixin:
         for row in rows:
             stored = self._message_replay_identity(row, stored_row=True)
             if (row.get("role") == "user" and int(row["store_id"]) not in consumed
-                    and _normalize_observed_at(row.get("observed_at")) == stamp and stored != identity
-                    and stored[1].strip() == text and tuple(stored[2:]) == tuple(identity[2:])):
+                    and _normalize_observed_at(row.get("observed_at")) == stamp and _ws_equivalent(stored, identity)):
                 return row
         return None
 
@@ -1177,7 +1275,76 @@ class IdentityAnchorMixin:
             budget = count_messages_tokens(chunk)
         return self._store_complete_input(chunk, claims, full_map, view, raw_chunk, frontier, carry,
                                           max(budget, count_messages_tokens(chunk)), accounted_ids,
-                                          copy_lookup=copy_lookup)
+                                          copy_lookup=copy_lookup, allow_retained_escape=self._retained_escape_enabled)
+
+    def _retained_escape_memo(self) -> dict:
+        """Escape-covered identities for the session and its compression ancestors; never a source claim."""
+        cache = self.__dict__.setdefault("_retained_escape_memos", {})
+        merged = {}
+        for session_id in [self._session_id, *self._identity_anchor_chain()]:
+            key = self._replay_snapshot_metadata_key("retained_escape", session_id)
+            if key in cache:
+                for digest, sid in cache[key].items():
+                    merged.setdefault(digest, sid)
+                continue
+            memo = {}
+            try:
+                payload = self._store.read_metadata_json(key)
+                for item in payload if isinstance(payload, list) else ():
+                    if not isinstance(item, dict) or not isinstance(item.get("identity_sha256"), str):
+                        continue
+                    try:
+                        sid = int(item.get("store_id"))
+                    except (TypeError, ValueError, OverflowError):
+                        continue
+                    if sid > 0:
+                        memo[item["identity_sha256"]] = sid
+            except (ValueError, TypeError):  # includes JSONDecodeError from the store's decoder
+                logger.debug("LCM retained escape metadata corrupt; caching empty memo", exc_info=True)
+                memo = {}
+            except Exception:
+                logger.debug("LCM retained escape metadata load failed", exc_info=True)
+                continue  # retry later; leave this key uncached to prevent a partial write
+            cache[key] = memo
+            for digest, sid in memo.items():
+                merged.setdefault(digest, sid)
+        return merged
+
+    @staticmethod
+    def _retained_escape_digest(identity) -> str:
+        return hashlib.sha256(json.dumps(list(identity), ensure_ascii=False, separators=(",", ":")).encode("utf-8")).hexdigest()
+
+    def _record_retained_escape(self, escaped) -> None:
+        if not escaped:
+            return
+        try:
+            memo = dict(self._retained_escape_memo())
+            key = self._replay_snapshot_metadata_key("retained_escape")
+            if key not in self._retained_escape_memos:
+                return  # this call's metadata load failed
+            for sid, row in self._store.get_batch([sid for sid, _role, _kind in escaped]).items():
+                for form in self._stored_row_forms(row):
+                    memo[self._retained_escape_digest(form)] = sid
+            recent = set(sorted(set(memo.values()))[-256:])  # cap rows, not their alternate forms
+            memo = {digest: sid for digest, sid in memo.items() if sid in recent}
+            rows = [{"store_id": sid, "identity_sha256": digest} for digest, sid in sorted(memo.items())]
+            self._store.write_metadata_json([key], json.dumps(rows, sort_keys=True), skip_unchanged=True)
+            self._retained_escape_memos[key] = memo
+        except Exception:
+            logger.debug("LCM retained escape metadata write failed", exc_info=True)
+
+    def _retained_escape_covered_view(self, message, frontier=None) -> bool:
+        if not self._retained_escape_enabled:
+            return False
+        memo = self._retained_escape_memo()
+        if not memo:
+            return False
+        frontier = self._store_complete_frontier() if frontier is None else frontier
+        for strip_carrier in (False, True):
+            identity = self._message_replay_identity(message, strip_carrier=strip_carrier)
+            if 0 < memo.get(self._retained_escape_digest(identity), 0) <= frontier:
+                return True
+        return False
 
     def _identity_anchor_view_key(self, message) -> Optional[tuple]:
         """A view row's occurrence key ``(stamp, form)`` as the ingest site keys it; None for LCM's own scaffold
@@ -1208,9 +1375,11 @@ class IdentityAnchorMixin:
                 return store_id
         return None
 
-    def _identity_anchor_covered_view(self, message, full_map) -> bool:
+    def _identity_anchor_covered_view(self, message, full_map, frontier=None) -> bool:
         """#563: a live user row that no store row maps and whose text is exactly a recorded composite
         (R2 witness) or its survivor, every constituent already covered (at or below the frontier)."""
+        if id(message) not in full_map and self._retained_escape_covered_view(message, frontier):
+            return True  # #1162: any role, including an unmapped host copy after a cold resume
         stamp = _normalize_observed_at(message.get("timestamp"))
         if message.get("role") != "user" or id(message) in full_map:
             return False
@@ -1241,9 +1410,10 @@ class IdentityAnchorMixin:
         if not chunk or len(chunk) >= len(candidates) or not identity_anchor_enabled():
             return chunk
         full_map, self._identity_anchor_text_memo = self._compress_run.store_ids_by_message_id or {}, {}
+        frontier = self._store_complete_frontier()
         end = len(chunk)
-        if all(self._identity_anchor_covered_view(message, full_map) for message in chunk):
-            while end < len(candidates) and self._identity_anchor_covered_view(candidates[end], full_map):
+        if all(self._identity_anchor_covered_view(message, full_map, frontier) for message in chunk):
+            while end < len(candidates) and self._identity_anchor_covered_view(candidates[end], full_map, frontier):
                 end += 1
             if end >= len(candidates):
                 return chunk

@@ -9,6 +9,7 @@ import os
 from pathlib import Path
 import sys
 from types import SimpleNamespace
+import uuid
 
 import pytest
 
@@ -357,7 +358,7 @@ def test_real_cli_consecutive_new_stores_under_second_id(engine, monkeypatch):
                 and node.name in {"new_session", "_launch_session_boundary_memory_flush"}]
     cli.bases, cli.decorator_list = [], []
     ids = iter(("first-new", "second-new"))
-    namespace = {"contextlib": contextlib, "new_session_id": lambda now: next(ids),
+    namespace = {"contextlib": contextlib, "uuid": uuid, "new_session_id": lambda now: next(ids),
                  "_reset_model_to_config_default": lambda *a: None}
     module = ast.Module(body=ast.parse("from __future__ import annotations").body + [cli],
                         type_ignores=[])
@@ -365,6 +366,7 @@ def test_real_cli_consecutive_new_stores_under_second_id(engine, monkeypatch):
     # Isolate UI/model/plugin services; lifecycle dispatch remains real host code.
     monkeypatch.setitem(sys.modules, "cli", SimpleNamespace(
         logger=logging.getLogger(__name__), CLI_CONFIG={"agent": {}}, datetime=datetime,
+        _parse_reasoning_config=lambda value: value,
         _parse_service_tier_config=lambda value: value, _sync_process_session_id=lambda sid: None))
     monkeypatch.setitem(sys.modules, "hermes_cli.cli_model_switch_mixin", SimpleNamespace(
         _resolve_cli_reasoning=lambda cli: None))
@@ -377,24 +379,26 @@ def test_real_cli_consecutive_new_stores_under_second_id(engine, monkeypatch):
     instance.conversation_history = []
     turn(instance.conversation_history, "before-one")
     instance.new_session(silent=True)
-    assert instance.session_id == engine.bound_session_id == "first-new"
+    first = instance.session_id
+    assert first != "old" and engine.bound_session_id == first
     instance.new_session(silent=True)  # Empty history: the real CLI skips engine end.
-    assert instance.session_id == "second-new"
+    second = instance.session_id
+    assert second not in {"old", first}
     for text in ("alpha", "beta"):
         turn(instance.conversation_history, text)
         engine.ingest(instance.conversation_history)
     rows = engine._store.connection.execute(
         "SELECT session_id, role, content FROM messages ORDER BY store_id").fetchall()
     expected = [("old", "user", "before-one"), ("old", "assistant", "answer before-one")]
-    expected += [("second-new", m["role"], m["content"]) for m in instance.conversation_history]
-    assert rows == expected  # No alpha/beta under old or first-new; old rows stay intact.
-    assert engine._store.get_session_count("first-new") == 0
-    assert engine.bound_session_id == engine.current_session_id == "second-new"
-    ended = engine._lifecycle.get_by_conversation("first-new")
+    expected += [(second, m["role"], m["content"]) for m in instance.conversation_history]
+    assert rows == expected  # No alpha/beta under old or the first new id; old rows stay intact.
+    assert engine._store.get_session_count(first) == 0
+    assert engine.bound_session_id == engine.current_session_id == second
+    ended = engine._lifecycle.get_by_conversation(first)
     assert ended.current_session_id is None
-    assert ended.last_finalized_session_id == "first-new"
-    assert engine._lifecycle.get_by_conversation("second-new").current_session_id == "second-new"
-    assert resolve_active_lcm_engine(session_id="second-new") is engine
+    assert ended.last_finalized_session_id == first
+    assert engine._lifecycle.get_by_conversation(second).current_session_id == second
+    assert resolve_active_lcm_engine(session_id=second) is engine
 
 
 @pytest.mark.parametrize("evidence", ["failed-ingest", "summary", "frontier", "finalized", "maintenance"])

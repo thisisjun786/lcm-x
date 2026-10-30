@@ -37,7 +37,7 @@ from hermes_lcm.tokens import count_message_tokens, count_messages_tokens, count
 
 @pytest.fixture
 def engine(tmp_path):
-    config = LCMConfig()
+    config = LCMConfig(embeddings_enabled=False)
     config.fresh_tail_count = 4  # small for testing
     config.leaf_chunk_tokens = 100  # low threshold for testing
     config.database_path = str(tmp_path / "lcm_test.db")
@@ -1527,7 +1527,7 @@ def test_get_status_exposes_runtime_identity_for_loaded_plugin_tree(tmp_path):
 
     assert identity["engine"] == "lcm-x"
     assert identity["plugin_name"] == "hermes-lcm-x"
-    assert identity["plugin_version"] == "0.28.0"
+    assert identity["plugin_version"] == "0.29.1"
     assert Path(identity["plugin_path"]) == repo_root
     assert Path(identity["module_path"]).name == "engine.py"
     assert Path(identity["database_path"]) == db_path
@@ -1555,11 +1555,11 @@ def test_plugin_metadata_refreshes_when_manifest_changes(tmp_path, monkeypatch):
 
     initial = identity_mod._plugin_metadata()
     assert initial["name"] == "hermes-lcm-x"
-    assert initial["version"] == "0.28.0"
+    assert initial["version"] == "0.29.1"
 
-    updated = original.replace('version: "0.28.0"', 'version: "9.9.9-test"')
+    updated = original.replace('version: "0.29.1"', 'version: "9.9.9-test"')
     if updated == original:
-        updated = original.replace('version: 0.28.0', 'version: 9.9.9-test')
+        updated = original.replace('version: 0.29.1', 'version: 9.9.9-test')
     assert updated != original
 
     manifest.write_text(updated, encoding="utf-8")
@@ -1590,7 +1590,7 @@ def test_lcm_doctor_json_includes_runtime_identity(engine):
     payload = json.loads(engine.handle_tool_call("lcm_doctor", {}))
 
     assert payload["runtime_identity"]["plugin_name"] == "hermes-lcm-x"
-    assert payload["runtime_identity"]["plugin_version"] == "0.28.0"
+    assert payload["runtime_identity"]["plugin_version"] == "0.29.1"
     assert "plugin_git_commit" in payload["runtime_identity"]
 
 
@@ -9764,7 +9764,7 @@ class TestMessageFiltering:
         finally:
             second.shutdown()
 
-    def test_preflight_ambiguous_generated_placeholder_still_requests_externalization_cleanup(self, tmp_path, monkeypatch):
+    def test_preflight_ambiguous_generated_placeholder_defers_size_only_externalization(self, tmp_path, monkeypatch):
         # #1055: force externalization for this fixture independently of the bound window.
         monkeypatch.setattr("hermes_lcm.ingest_protection._non_tool_text_over_floor", lambda text, config, **_: bool(text))
         db_path = tmp_path / "lcm_msg_ignore_preflight_placeholder_externalize_cleanup.db"
@@ -9802,7 +9802,13 @@ class TestMessageFiltering:
                 {"role": "user", "content": "oversized raw payload " + "x" * 200},
             ]
 
-            assert second.should_compress_preflight(messages) is True
+            assert second.should_compress_preflight(messages) is False
+            # Both differences are size stubs; the host's ignored placeholder
+            # and its durable provenance remain intact while adoption defers.
+            assert messages[0]["content"] == placeholder
+            assert digest in second._load_generated_ignored_placeholder_hashes()
+            assert second._last_active_replay_messages[0]["content"].startswith("[Externalized payload: kind=raw_payload;")
+            assert second._last_active_replay_messages[1]["content"].startswith("[Externalized payload: kind=raw_payload;")
         finally:
             second.shutdown()
 

@@ -10,6 +10,7 @@ the full canonical bound statement.
 from __future__ import annotations
 
 import argparse
+import ast
 import dataclasses
 import hashlib
 import importlib
@@ -19,6 +20,7 @@ import logging
 import os
 import re
 import sqlite3
+import sys
 import tempfile
 import time
 from collections.abc import Iterator
@@ -42,6 +44,7 @@ escalation: Any = importlib.import_module("hermes_lcm.escalation")
 dag: Any = importlib.import_module("hermes_lcm.dag")
 tokens: Any = importlib.import_module("hermes_lcm.tokens")
 leaf_prep: Any = importlib.import_module("hermes_lcm.leaf_prep")
+host_uid_emit: Any = importlib.import_module("hermes_lcm.host_uid_emit")
 harness: Any = importlib.import_module("tests.harness")
 GOLDEN = Path(__file__).parents[1] / "fixtures" / "compress_trace.json"
 Trace = list[str]
@@ -65,9 +68,45 @@ class Scenario:
     setup: str = ""
     expiry_checkpoint: int = 0
     window: int = 200000
+    escape_retained: bool = True
 
 
 SCENARIOS = (
+    *(Scenario(f"leaf-phase-rescue-{order}", mode="context-refusal", setup=f"rescue-{order}",
+               turns=30, overrides=(("leaf_chunk_tokens", 20000), ("dynamic_leaf_chunk_max", 20000),
+                                     ("fresh_tail_count", 8), ("fresh_tail_pressure_yield_enabled", False)))
+      for order in ("loses", "keeps")),
+    Scenario("leaf-phase-dependent", shape="dependent-only", setup="dependent-leaf",
+             overrides=(("leaf_chunk_tokens", 1),)),
+    Scenario("leaf-phase-no-call-stop", mode="open-circuit"),
+    Scenario("leaf-phase-soft-extraction", sweep=True, overrides=(("extraction_enabled", True),)),
+    Scenario("leaf-phase-budget-after-leaf", mode="timeout-after-leaf", sweep=True),
+    Scenario("leaf-phase-raise-cleanup", mode="cancel-first"),
+    Scenario("leaf-phase-lineage-moved", mode="move-lineage"),
+    Scenario("leaf-phase-data-error-before", mode="rescue-read-error"),
+    Scenario("leaf-phase-data-error-after", mode="rescue-read-error-after", sweep=True),
+    *(Scenario(f"stop-hang-{history}-{overflow}-{fallback}", mode="timeout", sweep=True, force=False,
+               current_tokens=250000 if overflow else 3000, setup="hang-repeat" if history else "",
+               overrides=(("summary_fallback_models", ["trace-fallback"] if fallback else []),))
+      for history in (False, True) for overflow in (False, True) for fallback in (False, True)),
+    Scenario("stop-route-after-leaf", mode="close-after-leaf", sweep=True),
+    Scenario("stop-rejection-after-leaf", mode="reject-after-leaf", sweep=True),
+    Scenario("stop-refused-restore", mode="open-circuit", shape="legacy-filter", setup="stored",
+             overrides=(("ignore_message_patterns", ["IGNORE THIS ROW"]),)),
+    Scenario("stop-overflow-no-leaf", turns=1, current_tokens=250000,
+             overrides=(("max_assembly_tokens", 2000), ("fresh_tail_pressure_yield_enabled", False))),
+    Scenario("stop-scaffold-equal", shape="ignored-no-system", setup="stored",
+             overrides=(("ignore_message_patterns", ["IGNORE THIS ROW"]), ("leaf_chunk_tokens", 20000))),
+    Scenario("stop-resumed-anchor", setup="resume-anchor", mode="open-circuit"),
+    Scenario("stop-reason-retained", setup="retained-proof", shape="no-system", retry=True,
+             escape_retained=False,
+             overrides=(("fresh_tail_count", 1), ("leaf_chunk_tokens", 1))),
+    Scenario("stop-reason-retained-escape", setup="retained-proof", shape="no-system", retry=True,
+             overrides=(("fresh_tail_count", 1), ("leaf_chunk_tokens", 1))),
+    Scenario("stop-reason-unattributed", setup="rotated", retry=True,
+             overrides=(("fresh_tail_pressure_yield_enabled", False),)),
+    Scenario("stop-reason-cleared", shape="legacy-filter", setup="stored",
+             overrides=(("ignore_message_patterns", ["IGNORE THIS ROW"]), ("leaf_chunk_tokens", 20000))),
     Scenario("finish-repeat-condensation-skipped", mode="reject-pre-only", sweep=True,
              seeded_depths=(0, 0, 0), overrides=(("summary_prefix_target_tokens", 100),)),
     Scenario("finish-post-drain-read-error", mode="post-frontier-read-error", sweep=True,
@@ -177,6 +216,8 @@ SCENARIOS = (
     Scenario("explicit-focus", focus="Preserve source coverage."),
     Scenario("no-system-prompt", shape="no-system"),
     Scenario("retained-tail-occurrence", shape="retained", overrides=(("fresh_tail_count", 1),
+             ("leaf_chunk_tokens", 1)), retry=True, escape_retained=False),
+    Scenario("retained-tail-occurrence-escape", shape="retained", overrides=(("fresh_tail_count", 1),
              ("leaf_chunk_tokens", 1)), retry=True),
     Scenario("replayed-summary-scaffold", setup="replay", retry=True),
     Scenario("stub-first-exit", shape="tools", force=False, current_tokens=12001, overrides=(
@@ -251,6 +292,48 @@ SCENARIOS = (
              ("background_leaf_prep_max_calls", 64), ("context_threshold", 0.75),
              ("max_assembly_tokens", 200000),
              ("large_output_externalization_path", ""))),
+    *(Scenario(f"publish-advance-{mode}", setup="prepared", mode=mode, force=mode == "promote-low",
+               current_tokens=130001 if mode == "promote-low" else 150000, overrides=(("background_leaf_prep_enabled", True),
+               ("background_leaf_prep_max_calls", 64), ("context_threshold", 0.75),
+               ("max_assembly_tokens", 200000), ("large_output_externalization_path", "")))
+      for mode in ("promote-low", "promote-continue", "publish-route", "publish-coverage",
+                   "publish-binding", "publish-frontier", "publish-fence", "publish-retry")),
+    Scenario("publish-advance-nonlock", mode="publish-error"),
+    Scenario("publish-advance-gc-nonlock", shape="tools", mode="gc-error", overrides=(
+        ("dynamic_leaf_chunk_max", 20000), ("large_output_externalization_enabled", True), ("large_output_active_replay_stubbing_enabled", False),
+        ("large_output_externalization_threshold_chars", 100), ("large_output_transcript_gc_enabled", True))),
+    Scenario("publish-advance-hidden-drain", shape="hidden", sweep=True),
+    Scenario("publish-advance-dynamic-empty", turns=2, current_tokens=60000, overrides=(
+        ("dynamic_leaf_chunk_enabled", True), ("leaf_chunk_tokens", 1), ("dynamic_leaf_chunk_max", 1))),
+    Scenario("publish-advance-deferred-short", setup="debt", current_tokens=190000, overrides=(
+        ("max_assembly_tokens", 200000), ("reserve_tokens_floor", 0), ("critical_budget_pressure_ratio", 0.9), ("deferred_maintenance_enabled", True), ("dynamic_leaf_chunk_enabled", True),
+        ("leaf_chunk_tokens", 2500), ("dynamic_leaf_chunk_max", 2500))),
+    *(Scenario(f"selection-prepared-{kind}", setup=f"prepared-{kind}", force=False,
+               current_tokens=150000, overrides=(("background_leaf_prep_enabled", True),
+               ("background_leaf_prep_max_calls", 64), ("context_threshold", 0.75),
+               ("max_assembly_tokens", 200000), ("large_output_externalization_path", "")))
+      for kind in ("match", "overflow", "no-call", "hidden", "split")),
+    Scenario("selection-empty-filtered", shape="filtered-empty", setup="stored", force=False,
+             overrides=(("ignore_message_patterns", ["IGNORE THIS ROW"]),)),
+    Scenario("selection-objective-sweep", shape="objective", sweep=True, force=False,
+             overrides=(("fresh_tail_count", 8),)),
+    Scenario("selection-pressure-sweep", sweep=True, force=False, overrides=(("fresh_tail_count", 100),
+             ("fresh_tail_pressure_yield_min_observations", 1),)),
+    *(Scenario(f"selection-deferred-critical-{dynamic}", setup="debt", force=False,
+               current_tokens=150000, overrides=(("deferred_maintenance_enabled", True),
+               ("max_assembly_tokens", 200000),
+               ("critical_budget_pressure_ratio", 0.5), ("leaf_chunk_tokens", 20000),
+               ("dynamic_leaf_chunk_enabled", dynamic), ("survival_fit", False)))
+      for dynamic in (False, True)),
+    Scenario("selection-unattributed", setup="rotated", retry=True,
+             overrides=(("fresh_tail_pressure_yield_enabled", False), ("extraction_enabled", True))),
+
+    Scenario("selection-prepared-input-price-change", setup="prepared-input-price-change", force=False,
+             current_tokens=150000, overrides=(("background_leaf_prep_enabled", True),
+             ("background_leaf_prep_max_calls", 64), ("context_threshold", 0.75),
+             ("leaf_chunk_tokens", 4000), ("dynamic_leaf_chunk_max", 4000),
+             ("max_assembly_tokens", 200000), ("large_output_externalization_path", ""))),
+
 )
 
 
@@ -339,6 +422,7 @@ OBSERVED_ATTRIBUTES = (
     "_committed_replay_drops",
     "_compaction_request",
     "_compress_dropped_ignored_rows",
+    "_compress_escaped",
     "_compress_forced_overflow",
     "_compress_hidden_rows_consumed",
     "_compress_host_rows_consumed",
@@ -387,6 +471,7 @@ OBSERVED_ATTRIBUTES = (
     "_last_compression_noop_reason",
     "_last_compression_status",
     "_last_condensation_suppressed_reason",
+    "_last_gate_tokens",
     "_last_hidden_backlog",
     "_last_leaf_content_filter_error",
     "_last_leaf_level_3_verbatim",
@@ -397,6 +482,7 @@ OBSERVED_ATTRIBUTES = (
     "_latest_user_context_anchor",
     "_leading_anchor_count",
     "_leaf_rescue_admit",
+    "_leaf_summary_order",
     "_lifecycle",
     "_load_compression_carry_ranges",
     "_load_generated_ignored_dependent_reply_records",
@@ -411,6 +497,12 @@ OBSERVED_ATTRIBUTES = (
     "_no_progress_candidate",
     "_no_progress_hold",
     "_no_progress_hold_blocks",
+    "_no_progress_hold_persisted",
+    "_no_progress_ingest_generation",
+    "_no_progress_observed_tokens",
+    "_no_progress_proof_complete",
+    "_no_progress_proof_fingerprint",
+    "_no_progress_public_rows",
     "_note_fresh_tail_pressure_relieved",
     "_objective_only_noop",
     "_overflow_recovery_assembly_cap",
@@ -425,6 +517,7 @@ OBSERVED_ATTRIBUTES = (
     "_refresh_raw_backlog_debt",
     "_remember_generated_ignored_dependent_reply",
     "_replay_occurrences",
+    "_retained_escape_enabled",
     "_run_pre_compaction_extraction",
     "_run_threshold_sweep_condensation",
     "_sanitize_active_context_messages",
@@ -441,7 +534,9 @@ OBSERVED_ATTRIBUTES = (
     "_store_complete_copy_exclusion_proofs",
     "_store_complete_cut",
     "_store_complete_empty_reason",
+    "_store_complete_escaped",
     "_store_complete_excluded",
+    "_store_complete_order",
     "_stored_publication_filter_exclusions",
     "_stub_first_exit",
     "_stub_first_exit_now",
@@ -480,6 +575,7 @@ class Canonical:
     def __init__(self, root: Path) -> None:
         self.root = str(root)
         self.ids: dict[str, str] = {}
+        self.proof_digests: dict[str, str] = {}
         self.excluded: dict[str, str] = {}
 
     def text(self, value: str) -> str:
@@ -493,6 +589,10 @@ class Canonical:
                       r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}", replace, value)
 
     def value(self, value: Any, path: str = "") -> Any:
+        if path == "_no_progress_proof_fingerprint" and isinstance(value, str):
+            # Store paths enter this opaque digest. Preserve equality/transitions;
+            # the focused regressions check actual fingerprint state binding.
+            return self.proof_digests.setdefault(value, f"<proof-digest-{len(self.proof_digests)}>")
         if value is None or isinstance(value, (bool, int, float)):
             return value
         if isinstance(value, (str, Path)):
@@ -508,7 +608,7 @@ class Canonical:
             return self.value(vars(value), path)
         if isinstance(value, dict):
             # These keys are Python object identities, not durable store IDs.
-            identity_keys = path.endswith(("store_ids_by_message_id", "_compress_occurrences"))
+            identity_keys = path.endswith(("store_ids_by_message_id", "_compress_occurrences", "_no_progress_public_rows"))
             return {(f"<message-{i}>" if identity_keys else str(k)): self.value(v, f"{path}.{k}")
                     for i, (k, v) in enumerate(value.items(), 1)}
         if isinstance(value, (list, tuple)):
@@ -583,6 +683,9 @@ def transcript(case: Scenario) -> list[dict[str, Any]]:
         rows[1]["content"] = "My preferred name is Reference. Preserve this identity. " + PAD
     if case.shape == "ignored":
         rows[3]["content"] = "IGNORE THIS ROW " + PAD
+    if case.shape == "ignored-no-system":
+        rows[3]["content"] = rows[4]["content"] = "IGNORE THIS ROW " + PAD
+        rows = rows[1:]
     if case.shape.startswith("legacy-"):
         index = 3 if case.shape == "legacy-filter" else len(rows) - (5 if case.shape == "legacy-tail" else 3)
         rows[index]["content"] = "IGNORE THIS ROW " + PAD
@@ -616,6 +719,10 @@ def transcript(case: Scenario) -> list[dict[str, Any]]:
         rows = [{"role": "user", "content": "IGNORE THIS ROW " + PAD},
                 {"role": "assistant", "content": "Dependent reply. " + PAD},
                 {"role": "assistant", "content": "Dependent continuation. " + PAD}]
+    if case.shape == "filtered-empty":
+        rows = [rows[0], {"role": "unknown", "content": "IGNORE THIS ROW " + PAD},
+                {"role": "user", "content": "Fresh request."},
+                {"role": "assistant", "content": "Fresh answer."}]
     return rows
 
 
@@ -634,7 +741,7 @@ class Provider:
         mode = self.case.mode
         if mode == "cancel-first" or (mode == "cancel-second" and self.calls == 2):
             raise HostInterrupted()
-        if mode == "timeout":
+        if mode == "timeout" or (mode == "timeout-after-leaf" and self.calls > 1):
             self.clock.now += float(timeout or 120)
             raise TimeoutError("provider timed out")
         if mode in {"slow", "very-slow"}:
@@ -645,6 +752,12 @@ class Provider:
             self.engine._store._conn.execute(
                 "UPDATE messages SET conversation_id = 'other-conversation' WHERE store_id = ?",
                 (2 if self.calls == 1 else 6,))
+            self.engine._store._conn.commit()
+        if mode == "move-lineage" and self.calls == 1:
+            # A competing session takes ownership while the provider runs.
+            # Raw content remains intact; publication must recheck lineage.
+            self.engine._store._conn.execute(
+                "UPDATE messages SET session_id = 'other-session', conversation_id = 'other-conversation'")
             self.engine._store._conn.commit()
         if mode == "lock-condensation" and ((self.case.sweep and self.calls == 1)
                                             or (not self.case.sweep and self.calls == 2)):
@@ -658,10 +771,31 @@ class Provider:
         if mode == "lock-gc" and self.calls == 1:
             self.engine._store._conn.execute("""CREATE TEMP TRIGGER lock_gc BEFORE UPDATE OF content ON messages
                 BEGIN SELECT RAISE(ABORT, 'database is locked'); END""")
+        if mode == "publish-error" and self.calls == 1:
+            self.engine._dag._conn.execute("""CREATE TEMP TRIGGER fail_publish BEFORE INSERT ON summary_nodes
+                BEGIN SELECT RAISE(ABORT, 'fixture publication failure'); END""")
+        if mode == "gc-error" and self.calls == 1:
+            self.engine._store._conn.execute("""CREATE TEMP TRIGGER fail_gc BEFORE UPDATE OF content ON messages
+                BEGIN SELECT RAISE(ABORT, 'fixture gc failure'); END""")
+        if mode.startswith("rescue-read-error"):
+            first = 2 if mode.endswith("after") else 1
+            if self.calls in (first, first + 1):
+                if self.calls == first + 1:
+                    denied = False
+                    def deny_rescue_read(action: int, table: str | None, *_args: Any) -> int:
+                        nonlocal denied
+                        if not denied and action == sqlite3.SQLITE_READ and table == "messages":
+                            denied = True
+                            return sqlite3.SQLITE_DENY
+                        return sqlite3.SQLITE_OK
+                    self.engine._store._conn.set_authorizer(deny_rescue_read)
+                raise RuntimeError("maximum context length exceeded")
         if mode == "context-refusal" and self.calls <= 2:
             raise RuntimeError("maximum context length exceeded")
         if mode == "outage" or (mode == "outage-after-leaves" and self.calls >= 8):
             return None
+        if mode == "reject-after-leaf" and self.calls > 1:
+            return "not shorter " * 4000
         if mode == "reject-first" and self.calls == 1:
             return "not shorter " * 4000
         return f"Earlier turns, call {self.calls}.\nExpand for details about: turns"
@@ -672,11 +806,26 @@ def install_clock(patch: pytest.MonkeyPatch, clock: Clock) -> None:
     replacement.monotonic, replacement.perf_counter, replacement.time = clock.monotonic, clock.monotonic, clock.wall
     replacement.time_ns = clock.time_ns
     replacement.gmtime = lambda: time.gmtime(1700000000)
-    for name in ("compaction", "engine", "escalation", "store", "dag", "lifecycle_state",
-                 "survival_fit", "externalize"):
-        module = importlib.import_module(f"hermes_lcm.{name}")
-        if hasattr(module, "time"):
-            patch.setattr(module, "time", replacement)
+    namespaces = {id(vars(module)): vars(module) for name, module in list(sys.modules.items())
+                  if name.startswith("hermes_lcm.") and module is not None}
+    # A reimport changes sys.modules, not the globals retained by existing classes.
+    engine_class = harness.make_engine.__globals__["LCMEngine"]
+    for cls in engine_class.__mro__:
+        for method in vars(cls).values():
+            namespace = getattr(getattr(method, "__func__", method), "__globals__", {})
+            if namespace.get("__name__", "").startswith("hermes_lcm."):
+                namespaces[id(namespace)] = namespace
+    # Include the retained engine's imported services (store, DAG, budgets, etc.).
+    for namespace in list(namespaces.values()):
+        for value in list(namespace.values()):
+            members = vars(value).values() if inspect.isclass(value) else (value,)
+            for member in members:
+                scope = getattr(getattr(member, "__func__", member), "__globals__", {})
+                if scope.get("__name__", "").startswith("hermes_lcm."):
+                    namespaces[id(scope)] = scope
+    for namespace in namespaces.values():
+        if "time" in namespace:
+            patch.setitem(namespace, "time", replacement)
 
 
 def connections(engine: Any) -> list[tuple[str, sqlite3.Connection]]:
@@ -743,7 +892,101 @@ def state(engine: Any, canonical: Canonical) -> dict[str, Any]:
     return result
 
 
+@contextmanager
+def leaf_selection_probe(engine: Any, case: Scenario, provider: Any, events: Trace) -> Iterator[None]:
+    """Observe the selection/admission contract without replacing an engine method."""
+    if not case.name.startswith("selection-"):
+        yield
+        return
+    source = ast.parse(inspect.getsource(compaction))
+    selected_lines = {node.lineno for node in ast.walk(source) if isinstance(node, ast.Assign)
+                      and any(isinstance(t, ast.Attribute) and t.attr == "selected" for t in node.targets)}
+    counts = {"selected": 0, "chunks": 0, "match": 0, "matched": 0, "refused": 0, "extraction": 0, "matched_input": 0, "split_input": 0, "rerun": 0}
+    rejections: list[str] = []
+    pending_rerun: list[int] = []
+    provider_calls = provider.calls
+    previous_trace, previous_profile = sys.gettrace(), sys.getprofile()
+
+    def trace(frame: Any, event: str, value: Any) -> Any:
+        if previous_trace is not None:
+            previous_trace(frame, event, value)
+        if (event == "line" and frame.f_globals.get("__name__") == compaction.__name__
+                and frame.f_code.co_name in {"_compress_impl", "_select_leaf_candidate"}
+                and frame.f_lineno in selected_lines):
+            counts["selected"] += 1
+        return trace
+
+    def profile(frame: Any, event: str, value: Any) -> None:
+        if previous_profile is not None:
+            previous_profile(frame, event, value)
+        name = frame.f_code.co_name
+        if event == "return" and name == "_match_prepared_leaf" and value is not None:
+            counts["matched"] += 1
+        if event == "return" and name == "_leaf_consumption" and frame.f_back.f_code.co_name in {
+            "_compress_impl", "_prepare_leaf_input"
+        }:
+            local = frame.f_back.f_locals
+            prepared = local["prepared"] if "prepared" in local else local["leaf"].prepared
+            # The match has already checked this exact consumption. With stable
+            # storage, the second check cannot reject the prepared host unit.
+            if tuple(value[3:]) != (list(prepared.covered_store_ids),) * 2:
+                assert case.setup == "prepared-input-price-change"
+                counts["split_input"] += 1
+            else:
+                counts["matched_input"] += 1
+        if event != "call":
+            return
+        if name == "_identity_anchor_extend_chunk" and frame.f_back.f_code.co_name in {
+            "_compress_impl", "_select_leaf_candidate"
+        }:
+            counts["chunks"] += 1
+            assert engine._foreground_budget.selected
+            if pending_rerun:
+                assert engine._foreground_budget.leaves == pending_rerun.pop()
+                counts["rerun"] += 1
+        if name == "_match_prepared_leaf":
+            counts["match"] += 1
+            local = frame.f_back.f_locals
+            state, leaf = local.get("state"), local.get("leaf")
+            hidden = local["hidden_backlog"] if "hidden_backlog" in local else leaf.hidden_backlog
+            overflow = local["force_overflow"] if "force_overflow" in local else state.force_overflow
+            no_call = local["no_call_only"] if "no_call_only" in local else state.no_call_only
+            assert not (hidden or overflow or no_call)
+        if name == "_reject_prepared_chain":
+            rejections.append(frame.f_locals["reason"])
+            if frame.f_back.f_code.co_name in {"_compress_impl", "_prepare_leaf_input"}:
+                assert frame.f_locals["reason"] == "host_unit_split"
+                pending_rerun.append(engine._foreground_budget.leaves)
+        if name == "_run_pre_compaction_extraction":
+            counts["extraction"] += 1
+        if name == "_warn_unattributed_leaf":
+            counts["refused"] += 1
+            assert provider.calls == provider_calls and counts["extraction"] == 0
+
+    sys.settrace(trace)
+    sys.setprofile(profile)
+    try:
+        yield
+    finally:
+        sys.settrace(previous_trace)
+        sys.setprofile(previous_profile)
+    assert counts["selected"] == counts["chunks"]
+    if case.setup in {"prepared-overflow", "prepared-no-call", "prepared-hidden"}:
+        assert counts["match"] == 0
+    if case.shape == "filtered-empty":
+        assert counts["selected"] == provider.calls == 0
+    if case.setup == "prepared-match":
+        assert counts["matched"] == counts["matched_input"] > 0
+    if case.setup == "prepared-split":
+        assert "host_unit_split" in rejections
+    if case.setup == "prepared-input-price-change":
+        assert counts["split_input"] == counts["rerun"] == 1
+        assert not pending_rerun and rejections == ["host_unit_split"]
+    events.append("selection probes " + encoded(counts) + " rejections=" + encoded(rejections))
+
+
 def observe(case: Scenario, root: Path) -> Trace:
+    root = root.resolve()
     root.mkdir(parents=True, exist_ok=True)
     events: Trace = []
     clock, canonical = Clock(expiry_checkpoint=case.expiry_checkpoint), Canonical(root)
@@ -753,6 +996,9 @@ def observe(case: Scenario, root: Path) -> Trace:
         pin(patch)
         install_clock(patch, clock)
         patch.setattr(leaf_prep, "_LEAF_PREP", leaf_prep._LeafPrep())
+        # The goldens are traces of a host without message uids; a uid-capable host (agent.message_metadata)
+        # adds _absorbed_message_uids to merged rows (#2027 item 45). Pin the probe so every host replays them.
+        patch.setattr(host_uid_emit, "_host_uid_capability", False)
         patch.setenv("HERMES_HOME", str(root / "home"))
         if case.setup == "no-identity":
             patch.setenv("LCM_IDENTITY_ANCHOR", "false")
@@ -766,9 +1012,40 @@ def observe(case: Scenario, root: Path) -> Trace:
                         large_output_externalization_path=str(root / "home" / "payloads"),
                         summary_prefix_target_tokens=1000)
         settings.update(dict(case.overrides))
+        if case.setup == "retained-proof":
+            from tests.test_host_uid_shadow import _state_db
+
+            _state_db(root, [("S", None, None)])
         context: Any = engine_context
         with context(root, window=case.window, conversation_id="trace-conversation", **settings) as engine:
+            # #1162 B3: retain base stop characterizations alongside escape-on twins.
+            engine._retained_escape_enabled = case.escape_retained
             view = transcript(case)
+            if case.setup == "prepared-input-price-change":
+                from types import ModuleType
+
+                changed = False
+                def image_price() -> int:
+                    nonlocal changed
+                    frame, names = inspect.currentframe(), set()
+                    while frame is not None:
+                        names.add(frame.f_code.co_name)
+                        frame = frame.f_back
+                    # The host reprices one image after matching. Real input
+                    # budgeting then cuts the prepared unit and reruns the pass.
+                    if (not changed and "_store_complete_input" in names and "_compress_impl" in names
+                            and "_match_prepared_leaf" not in names):
+                        changed = True
+                        events.append("host image repriced during input budgeting")
+                        return 100000
+                    return 1500
+
+                pricing = ModuleType("agent.image_token_cost")
+                pricing.current_image_token_cost = image_price
+                patch.setitem(sys.modules, pricing.__name__, pricing)
+                for row in view[1:]:
+                    row["content"] = [{"type": "text", "text": row["content"]},
+                                      {"type": "image_url", "image_url": {"url": "data:image/png;base64,AA=="}}]
             if settings.get("ignore_message_patterns"):
                 engine._compiled_ignore_message_patterns = [LiteralPattern()]
             if case.setup == "resume-wide-tail":
@@ -779,6 +1056,23 @@ def observe(case: Scenario, root: Path) -> Trace:
                     source_type="messages", created_at=100.0))
                 engine._lifecycle.advance_frontier("trace-conversation", "S", 4)
                 engine._last_compacted_store_id = 4
+            if case.setup == "resume-anchor":
+                for row in view:
+                    row.pop("timestamp", None)
+                engine.ingest(view)
+                engine._dag.add_node(dag.SummaryNode(
+                    session_id="S", depth=0, summary="Committed prefix. Expand for details about: turns",
+                    token_count=20, source_token_count=1200, source_ids=[3, 4, 5],
+                    source_type="messages", created_at=100.0))
+                engine._lifecycle.advance_frontier("trace-conversation", "S", 5)
+                engine._last_compacted_store_id = 5
+            if case.setup == "retained-proof":
+                for index, row in enumerate(view):
+                    row["message_uid"] = f"occurrence-{index}"
+                engine.ingest(view)
+                view = [*view[2:], dict(view[0]), dict(view[1])]
+                view.insert(2, {"role": "assistant", "content": ""})
+                engine._ingest_cursor = len(view)
             if case.setup == "bypass-no-aux":
                 engine.ingest(view)
                 engine.on_session_start("trace-bypass", context_length=200000, platform="cli")
@@ -807,12 +1101,19 @@ def observe(case: Scenario, root: Path) -> Trace:
                 engine._mark_thread_context_stateless("trace-child")
                 if case.setup == "child-usage":
                     engine.update_from_response({"prompt_tokens": 1000})
-            if case.setup == "dependents":
+            if case.setup in {"dependents", "dependent-leaf"}:
                 engine.ingest(view)
                 engine._compress_run.store_ids_by_message_id = engine._get_store_id_map_for_messages(view)
                 for row in view:
                     if row.get("role") == "assistant":
                         engine._remember_generated_ignored_dependent_reply(row, row["content"])
+            if case.setup == "dependent-leaf":
+                # The ignored prompt was consumed earlier; the owned replies
+                # remain above that frontier and ahead of the fresh user turn.
+                engine._lifecycle.advance_frontier("trace-conversation", "S", 2)
+                engine._last_compacted_store_id = 2
+                view = [view[0], *view[2:]]
+                engine._ingest_cursor = len(view)
             for i, depth in enumerate(case.seeded_depths):
                 engine._dag.add_node(dag.SummaryNode(
                     session_id="S", depth=depth, summary=f"Seed {i}. " + PAD,
@@ -826,6 +1127,9 @@ def observe(case: Scenario, root: Path) -> Trace:
                 view = [*view[2:], dict(view[0]), dict(view[1])]
                 engine._ingest_cursor = len(view)
             if case.setup == "debt":
+                if case.name == "publish-advance-deferred-short":
+                    engine.ingest(view)
+                    engine.last_prompt_tokens = case.current_tokens
                 engine._lifecycle.record_debt("trace-conversation", kind="raw_backlog", size_estimate=4000)
             if case.mode == "open-circuit":
                 for _ in range(3):
@@ -842,6 +1146,17 @@ def observe(case: Scenario, root: Path) -> Trace:
             if case.setup == "rotated":
                 engine.ingest(view)
                 assert engine.rotate_active_session(apply=True)["ok"]
+            if case.setup.startswith("rescue-"):
+                view = view[1:]
+                for row in view:
+                    row.pop("timestamp", None)
+                engine.ingest(view)
+                assert engine.rotate_active_session(apply=True)["ok"]
+                engine.on_session_start("S", conversation_id="trace-conversation", context_length=case.window)
+                later = [{"role": role, "content": f"New {i} {role}. " + PAD}
+                         for i in range(6) for role in ("user", "assistant")]
+                view = [*view, *later] if case.setup == "rescue-loses" else [*later, *view]
+                engine.ingest(view)
             if case.setup.startswith("prepared"):
                 engine.ingest(view)
                 engine.last_prompt_tokens = case.current_tokens
@@ -853,6 +1168,33 @@ def observe(case: Scenario, root: Path) -> Trace:
                 provider.calls = 0
                 if case.setup == "prepared-route-changed":
                     engine._config.summary_model = "changed-trace-model"
+                if case.setup == "prepared-overflow":
+                    case = dataclasses.replace(case, current_tokens=250000)
+                if case.setup == "prepared-no-call":
+                    for _ in range(3):
+                        engine._summary_circuit_breaker.record_failure("trace-model")
+                if case.setup == "prepared-hidden":
+                    view = view[-2:]
+                if case.setup == "prepared-split":
+                    engine._compress_run.store_ids_by_message_id = engine._get_store_id_map_for_messages(view)
+                    engine._remember_generated_ignored_dependent_reply(view[2], view[2]["content"])
+            if case.setup == "hang-repeat":
+                engine._foreground_budget = engine._new_foreground_budget()
+                with engine._fresh_tail_pressure_yield_invocation():
+                    engine._compress_impl(view, current_tokens=3000, force=False)
+                assert engine._hung_summary_strike == ("trace-conversation", "trace-model")
+                clock.now += 301  # the route circuit expires before the longer sweep hold
+                events.clear()
+                provider.calls = 0
+            if case.name == "leaf-phase-soft-extraction":
+                from types import ModuleType
+
+                auxiliary = ModuleType("agent.auxiliary_client")
+                def extract_call(**kwargs: Any) -> Any:
+                    events.append(f"extraction timeout={kwargs.get('timeout')} progress={engine._foreground_budget.progress}")
+                    return SimpleNamespace(choices=[SimpleNamespace(message=SimpleNamespace(content="[]"))])
+                auxiliary.call_llm = extract_call
+                patch.setitem(sys.modules, auxiliary.__name__, auxiliary)
             initial = state(engine, canonical)
             conns = connections(engine)
             shapes: dict[tuple[str, str], int] = {}
@@ -872,7 +1214,29 @@ def observe(case: Scenario, root: Path) -> Trace:
                     return sqlite3.SQLITE_DENY
                 return sqlite3.SQLITE_OK
 
+            publication_race = False
+            snapshot_proofs: dict[str, str] = {}
+
             def trace_sql(connection: str, sql: str) -> None:
+                nonlocal publication_race
+                if (case.name.startswith("publish-advance-") and not publication_race
+                        and connection == "_dag" and sql.lstrip().startswith("INSERT INTO summary_nodes")):
+                    publication_race = True
+                    conn = engine._dag._conn
+                    if case.mode == "publish-route":
+                        engine._config.summary_model = "changed-trace-model"
+                    elif case.mode == "publish-coverage":
+                        conn.execute("UPDATE messages SET content = 'changed in transaction' WHERE store_id = 2")
+                    elif case.mode == "publish-binding":
+                        conn.execute("UPDATE lcm_lifecycle_state SET current_session_id = 'other-session'")
+                    elif case.mode == "publish-frontier":
+                        conn.execute("UPDATE lcm_lifecycle_state SET current_frontier_store_id = 1")
+                    elif case.mode == "publish-fence":
+                        conn.execute("UPDATE messages SET conversation_id = 'other-conversation' WHERE store_id = 2")
+                if (case.mode == "close-after-leaf" and connection == "_dag"
+                        and sql.strip() == "COMMIT" and provider.calls == 1):
+                    for _ in range(3):
+                        engine._summary_circuit_breaker.record_failure("trace-model")
                 if (case.mode in {"frontier-read-error", "post-frontier-read-error"} and connection == "_dag"
                         and sql.strip() == "COMMIT" and provider.calls == (8 if case.mode == "post-frontier-read-error" else 1) and not frontier_read_denied):
                     # Publication errors are converted to condensation_error by
@@ -883,6 +1247,14 @@ def observe(case: Scenario, root: Path) -> Trace:
                 if sql.lstrip().startswith("--") or re.search(r"(['\"])(main|temp)\1\s*\.", sql):
                     return
                 normalized = canonical.text(sql.strip())
+                if (case.name == "stop-reason-retained-escape"
+                        and "'host_occurrence_snapshot:" in normalized):
+                    # The proof includes generated node IDs. Preserve digest equality/transitions
+                    # in this new twin, as for _no_progress_proof_fingerprint, not their random bytes.
+                    normalized = re.sub(
+                        r'("proof_sha256": ")([0-9a-f]{64})(")',
+                        lambda match: match[1] + snapshot_proofs.setdefault(
+                            match[2], f"<snapshot-proof-{len(snapshot_proofs)}>") + match[3], normalized)
                 if re.match(r"(?:--\s*)?(?:INSERT|UPDATE|DELETE|REPLACE|CREATE|DROP|ALTER|BEGIN|COMMIT|ROLLBACK|SAVEPOINT|RELEASE)\b",
                             normalized, re.IGNORECASE):
                     # Normalize whitespace outside literals only: literal whitespace is data.
@@ -915,11 +1287,134 @@ def observe(case: Scenario, root: Path) -> Trace:
                             before_calls = provider.calls
                             before_rows = harness.stored_rows(engine, "S")
                             before_nodes = engine._dag.get_session_nodes("S", limit=10000)
+                        if case.name == "stop-reason-unattributed" and attempt:
+                            view = [*view, {"role": "assistant", "content": ""}]
                         propagated_frontier_error = False
+                        fit_causes: list[str] = []
+
+                        leaf_probe = {"summaries": 0, "models": 0, "captures": 0}
+                        backstop = {"empty": False, "time_bounds": 0, "sql": 0}
+                        backstop_warned = False
+
+                        def profile_leaf(frame: Any, event: str, value: Any) -> None:
+                            nonlocal backstop_warned
+                            if previous_profile is not None:
+                                previous_profile(frame, event, value)
+                            name = frame.f_code.co_name
+                            if event == "return" and name == "_leaf_consumption" and value is not None:
+                                backstop["empty"] = not value[-1]
+                            if event != "call":
+                                return
+                            if backstop["empty"] and name == "get_time_bounds":
+                                backstop["time_bounds"] += 1
+                            if backstop["empty"] and name == "_warn_unattributed_leaf":
+                                backstop_warned = True
+                            if backstop["empty"] and not backstop_warned and name == "trace_sql":
+                                owner = frame.f_back
+                                while owner is not None and owner.f_code.co_name not in {"_compress_impl", "_build_leaf_publication"}:
+                                    owner = owner.f_back
+                                if owner is not None:
+                                    backstop["sql"] += 1
+                            if name == "_take_leaf_summary_model":
+                                leaf_probe["models"] += 1
+                            if name == "_summarize_leaf_chunk_with_rescue":
+                                leaf_probe["summaries"] += 1
+                                hook = engine._leaf_rescue_admit
+                                cells = dict(zip(hook.__code__.co_freevars,
+                                                 (cell.cell_contents for cell in hook.__closure__)))
+                                owner = frame.f_back
+                                while owner.f_code.co_name not in {"_compress_impl", "_summarize_selected_leaf"}:
+                                    owner = owner.f_back
+                                local = owner.f_locals
+                                leaf = local.get("leaf")
+                                for key in ("anchor_claims", "sources"):
+                                    expected = local[key] if key in local else getattr(leaf, key)
+                                    assert cells[key] is expected
+                                assert cells["full_map"] is engine._compress_run.store_ids_by_message_id
+                                leaf_probe["captures"] += 1
+
+                        def profile_fit(frame: Any, event: str, value: Any) -> None:
+                            if previous_profile is not None:
+                                previous_profile(frame, event, value)
+                            if event == "call" and frame.f_code.co_name == "_survival_fit":
+                                fit_causes.append(frame.f_locals["fit_cause"])
+
+                        publication_probe: dict[str, Any] = {
+                            "publish": 0, "insert": 0, "revalidate": 0, "stage": 0, "promoted": 0,
+                            "summaries": 0, "rejected": [], "order": [],
+                        }
+                        publication_passes: list[tuple[int, int, int]] = []
+                        initial_limit = 0
+
+                        def profile_publication(frame: Any, event: str, value: Any) -> None:
+                            nonlocal initial_limit
+                            if previous_profile is not None:
+                                previous_profile(frame, event, value)
+                            name = frame.f_code.co_name
+                            finish_keys = (
+                                "leaf_passes", "max_leaf_passes", "sweep_stop_reason", "estimated_active_tokens", "prep_low_water")
+                            if event == "return" and name == "_advance_after_leaf" and value is None:
+                                # An exception unwinds before the driver can unpack the run state.
+                                publication_probe["finish"] = {
+                                    key: getattr(frame.f_locals["state"], key) for key in finish_keys}
+                            if event == "return" and name == "_compress_impl" and "finish" not in publication_probe:
+                                publication_probe["finish"] = {key: frame.f_locals.get(key) for key in (
+                                    "leaf_passes", "max_leaf_passes", "sweep_stop_reason", "estimated_active_tokens", "prep_low_water")}
+                            if event != "call":
+                                return
+                            if name == "_publish_leaf_node":
+                                publication_probe["publish"] += 1
+                                assert engine._session_id and engine._conversation_id
+                                owner = frame.f_back
+                                while owner.f_code.co_name != "_compress_impl":
+                                    owner = owner.f_back
+                                local = owner.f_locals
+                                if not initial_limit:
+                                    initial_limit = local["max_leaf_passes"]
+                                publication_passes.append((local["leaf_passes"], local["max_leaf_passes"], provider.calls))
+                                if case.mode == "publish-retry" and publication_probe["publish"] == 1:
+                                    # A genuine stale read snapshot fails the first INSERT, then retries.
+                                    conn = engine._dag._conn
+                                    conn.execute("BEGIN")
+                                    conn.execute("SELECT COUNT(*) FROM messages").fetchone()
+                                    engine._store._conn.execute("UPDATE messages SET content = content WHERE store_id = 2")
+                                    engine._store._conn.commit()
+                            if name == "insert_node":
+                                owner = frame.f_back
+                                while owner is not None and owner.f_code.co_name != "_publish_leaf_node":
+                                    owner = owner.f_back
+                                if owner is not None:
+                                    publication_probe["insert"] += 1
+                            if name == "revalidate" and frame.f_globals.get("__name__") == "hermes_lcm.compaction":
+                                assert frame.f_locals["conn"].in_transaction
+                                publication_probe["revalidate"] += 1
+                                publication_probe["order"].append("revalidate")
+                            if name == "stage_compaction_publication":
+                                assert frame.f_locals["conn"].in_transaction
+                                publication_probe["stage"] += 1
+                                publication_probe["order"].append("stage")
+                            if name == "_reject_prepared_chain":
+                                publication_probe["rejected"].append(frame.f_locals["reason"])
+                            if name == "promoted" and frame.f_code.co_qualname == "promoted":
+                                publication_probe["promoted"] += 1
+                            if name == "_summarize_leaf_chunk_with_rescue":
+                                publication_probe["summaries"] += 1
+
+                        previous_profile = sys.getprofile()
+                        if case.name.startswith("stop-reason-") and (case.setup != "rotated" or attempt):
+                            sys.setprofile(profile_fit)
+                        if case.name.startswith("leaf-phase-"):
+                            sys.setprofile(profile_leaf)
+                        if case.name.startswith("publish-advance-"):
+                            sys.setprofile(profile_publication)
                         try:
-                            with engine._fresh_tail_pressure_yield_invocation():
-                                returned = engine._compress_impl(view, current_tokens=case.current_tokens,
-                                                                 force=case.force, focus_topic=case.focus)
+                            with leaf_selection_probe(engine, case, provider, events), engine._fresh_tail_pressure_yield_invocation():
+                                if case.name.startswith("stop-reason-") and (case.setup != "rotated" or attempt):
+                                    returned = engine.compress(view, current_tokens=case.current_tokens,
+                                                               force=case.force, focus_topic=case.focus)
+                                else:
+                                    returned = engine._compress_impl(view, current_tokens=case.current_tokens,
+                                                                     force=case.force, focus_topic=case.focus)
                             events.append("return " + compact(canonical.value(returned)))
                         except BaseException as exc:
                             if not isinstance(exc, (Exception, HostInterrupted)):
@@ -940,8 +1435,83 @@ def observe(case: Scenario, root: Path) -> Trace:
                                 assert not compaction._is_sqlite_locked_error(exc)
                                 propagated_frontier_error = True
                         finally:
+                            sys.setprofile(previous_profile)
                             if case.mode in {"frontier-read-error", "post-frontier-read-error"}:
                                 engine._dag._conn.set_authorizer(None)
+                            if case.mode.startswith("rescue-read-error"):
+                                engine._store._conn.set_authorizer(None)
+                        if case.name.startswith("publish-advance-"):
+                            reasons = {"publish-route": "route_fingerprint_mismatch",
+                                       "publish-coverage": "coverage_digest_mismatch",
+                                       "publish-binding": "binding_changed", "publish-frontier": "frontier_moved",
+                                       "publish-fence": "fence_conflict"}
+                            if case.mode in reasons:
+                                assert publication_probe["rejected"] == [reasons[case.mode]], publication_probe
+                                assert publication_probe["promoted"] == 0
+                            if case.mode in {"publish-route", "publish-coverage"}:
+                                assert publication_probe["order"][0] == "revalidate"
+                                assert publication_probe["summaries"] > 0
+                            if case.mode in {"publish-binding", "publish-frontier", "publish-fence"}:
+                                assert publication_probe["order"] == ["revalidate", "stage"]
+                                assert engine._foreground_budget.leaves == 0
+                                assert returned == view
+                            if case.mode in {"promote-low", "promote-continue", "publish-retry"}:
+                                promoted = publication_probe["promoted"]
+                                assert promoted > 0, publication_probe
+                                assert publication_probe["order"][:2] == ["revalidate", "stage"]
+                                for passes, limit, calls in publication_passes[:promoted]:
+                                    assert limit == initial_limit + passes and calls == 0, (case.name, initial_limit, publication_passes, publication_probe)
+                                if case.mode == "promote-low":
+                                    assert publication_probe["finish"]["sweep_stop_reason"] == "prepared_leaves_promoted"
+                                    assert provider.calls == 0
+                                if case.mode == "promote-continue":
+                                    assert len(publication_passes) > 1
+                                if case.mode == "publish-retry":
+                                    assert publication_probe["insert"] == publication_probe["publish"] + 1
+                                    assert publication_probe["revalidate"] == promoted
+                            if case.mode in {"publish-error", "gc-error"}:
+                                assert any(event.startswith("raise IntegrityError") for event in events), (case.name, publication_probe, [e for e in events if e.startswith(("raise ", "log "))])
+                                assert engine._foreground_budget.leaves == (case.mode == "gc-error")
+                                assert bool(engine._dag.get_session_nodes("S")) == (case.mode == "gc-error")
+                            events.append("publication probes " + encoded(publication_probe))
+                            events.append("publication pass limits " + encoded(publication_passes))
+                        if case.name.startswith("leaf-phase-"):
+                            assert engine._leaf_rescue_admit is None
+                            assert leaf_probe["captures"] == leaf_probe["summaries"]
+                            assert leaf_probe["models"] == engine._foreground_budget.leaves
+                            if case.name == "leaf-phase-dependent":
+                                assert leaf_probe["summaries"] == 0 and leaf_probe["models"] > 0
+                            if case.name == "leaf-phase-no-call-stop":
+                                assert leaf_probe["summaries"] == leaf_probe["models"] == provider.calls == 0
+                            if case.name == "leaf-phase-soft-extraction":
+                                assert any(event.startswith("extraction timeout=") and event.endswith("progress=leaf")
+                                           for event in events)
+                            if case.setup in {"rescue-loses", "rescue-keeps"}:
+                                # fork (UID-first pairing): unpaired rows stay live, so the rescue retries only
+                                # attributable source rows and keeps durable source (test_issue_1141 fork variant).
+                                assert provider.calls == 3 and leaf_probe["models"] == 1, (provider.calls, leaf_probe, engine._last_compression_noop_reason)
+                                assert returned != view
+                            if case.setup == "rescue-keeps":
+                                assert provider.calls == 3 and leaf_probe["models"] == 1, (provider.calls, leaf_probe, engine._last_compression_noop_reason)
+                                assert returned != view
+                            if case.name == "leaf-phase-budget-after-leaf":
+                                assert engine._foreground_budget.leaves == 1
+                                assert engine._last_threshold_full_sweep["stop_reason"] == "time_budget_exhausted"
+                            if case.mode.startswith("rescue-read-error"):
+                                if case.mode.endswith("after"):
+                                    assert engine._foreground_budget.leaves == 1
+                                    assert engine._last_threshold_full_sweep["stop_reason"] == "leaf_summary_error"
+                                    assert not any(event.startswith("raise ") for event in events)
+                                else:
+                                    assert any(event.startswith("raise DatabaseError") for event in events)
+                            if case.mode == "move-lineage":
+                                assert backstop == {"empty": True, "time_bounds": 0, "sql": 0}, backstop
+                                assert leaf_probe["models"] == 0
+                                assert engine._last_compression_noop_reason == "selected leaf chunk lacks raw store lineage"
+                                events.append("backstop before time bounds and pre-warning SQL " + encoded(backstop))
+                            if case.name == "leaf-phase-raise-cleanup":
+                                assert any(event.startswith("raise HostInterrupted") for event in events)
+                            events.append("leaf probes " + encoded(leaf_probe) + " hook=None")
                         if case.setup == "resume-wide-tail":
                             assert provider.calls == before_calls
                             assert harness.stored_rows(engine, "S") == before_rows
@@ -951,6 +1521,60 @@ def observe(case: Scenario, root: Path) -> Trace:
                                            and row["role"] == out.get("role") for out in returned)
                                        for row in view[int(engine._last_compacted_store_id):])
                             events.append("resumed prefix: no new leaf; durable rows unchanged; remaining tail survives")
+                        if case.name.startswith("stop-"):
+                            assert engine._pending_context_anchor_messages is None
+                            if case.name.startswith("stop-hang-"):
+                                assert engine._foreground_budget.hung_route == "trace-model"
+                                repeated = case.setup == "hang-repeat"
+                                overflow = case.current_tokens == 250000
+                                fallback = bool(dict(case.overrides)["summary_fallback_models"])
+                                expected_strike = None if overflow and not repeated else ("trace-conversation", "trace-model")
+                                assert engine._hung_summary_strike == expected_strike
+                                assert engine._sweep_budget_hold_turn_paced == (not repeated and not overflow and not fallback)
+                                events.append("hang settlement " + compact(canonical.value({
+                                    "strike": engine._hung_summary_strike, "turn_paced": engine._sweep_budget_hold_turn_paced,
+                                    "hold_until": engine._sweep_budget_hold_until})))
+                            if case.mode in {"close-after-leaf", "reject-after-leaf"}:
+                                assert engine._foreground_budget.leaves == 1, (case.name, engine._foreground_budget.leaves, engine._last_threshold_full_sweep)
+                                assert engine._last_compression_noop_reason == ""
+                                assert engine._sweep_budget_hold_until == 0
+                                assert returned != view and engine._dag.get_session_nodes("S")
+                                assert engine._last_threshold_full_sweep["stop_reason"] == (
+                                    "summary_route_unavailable" if case.mode == "close-after-leaf" else "summary_result_rejected")
+                                events.append("partial success: one leaf, no no-leaf hold or reason overwrite")
+                            if case.setup == "resume-anchor":
+                                assert provider.calls == 0 and returned[1] == view[1]
+                                assert str(returned[2]["content"]).startswith("[Recent Summary")
+                                assert engine._ingest_cursor == len(returned)
+                                events.append("resumed anchor precedes committed summary; pending anchors cleared")
+                            if case.name == "stop-refused-restore":
+                                assert returned == view and provider.calls == 0
+                                assert engine._last_compression_noop_reason == "summary route unavailable"
+                                events.append("refused-input snapshot restored including the ignored row")
+                            if case.name == "stop-overflow-no-leaf":
+                                assert engine._foreground_budget.leaves == 0 and provider.calls == 0
+                                assert engine._last_compression_status == "overflow_recovery"
+                            if case.name == "stop-scaffold-equal":
+                                expected = [row for row in view if "IGNORE THIS ROW" not in row["content"]]
+                                assert returned == expected and engine._last_compression_status == "noop"
+                                assert engine._ingest_cursor == len(returned)
+                                events.append("scaffold drop: assembly equals filtered working view; cursor aligned")
+                            if case.name.startswith("stop-reason-") and (case.setup != "rotated" or attempt):
+                                assert fit_causes
+                                if case.name.endswith("retained"):
+                                    # fork (UID-first pairing): the unresolved host occurrence stays live and the
+                                    # sparse UID leaf drains the other rows instead of stopping before it.
+                                    assert engine._uid_sparse_coverage, (fit_causes, engine._last_compression_noop_reason)
+                                    assert fit_causes == [""] and engine._last_compression_status == "compacted"
+                                elif case.name.endswith("unattributed") and attempt:
+                                    # fork (UID-first pairing): the rotated rows without lineage stay live and the
+                                    # sparse UID leaf compacts the attributable rows instead of refusing the pass.
+                                    assert engine._uid_sparse_coverage, (fit_causes, engine._last_compression_noop_reason)
+                                    assert fit_causes == [""] and engine._last_compression_status == "compacted"
+                                elif case.name.endswith("cleared"):
+                                    assert fit_causes == [""]
+                                    assert engine._last_compression_status == "sanitized"
+                                events.append("wrapper fit_cause " + compact(fit_causes))
                         if case.mode == "frontier-read-error":
                             assert frontier_read_denied and propagated_frontier_error
                             assert engine._foreground_budget.leaf_reserve == 0.0
@@ -1035,6 +1659,8 @@ def observe(case: Scenario, root: Path) -> Trace:
                         conn.set_trace_callback(None)
                     if case.shape == "child":
                         engine._clear_thread_context_stateless("trace-child")
+    if case.name.startswith("selection-"):
+        assert not any(event.startswith("raise AssertionError") for event in events), events
     return events
 
 

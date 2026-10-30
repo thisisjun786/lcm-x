@@ -30,8 +30,28 @@ uv run --no-project python bench/instruments/reliability/run_matrix.py \
   several GB per cell, so no Hermes database is left in `<out>` by default.
 - Debugging: `--keep-dbs fail` keeps the `db/` copies of non-PASS cells and of a PASS that carries host-parity
   licences, `--keep-dbs all` those of every cell, and `--keep-homes` the hermes-home; each is moved into the cell
-  dir (`<cell>/db/`, `<cell>/hermes-home/`); re-scoring a cell later (`scorers/cli.py --cell-dir`) needs its kept
-  `db/`. If a move fails, nothing is deleted and the error names both dirs. A caller that sandboxes host writes to one
+  dir (`<cell>/db/`, `<cell>/hermes-home/`); offline re-scoring needs the kept `db/` and the cell's plugin source.
+  Download the host artifact (`gh run download <run-id> -R electricsheephq/lcm-x -n <artifact> -D <artifact-dir>`), find the
+  cell directory, and read its `cell.json` `plugin.sha`. From a repository containing that commit, create
+  a detached checkout with `git worktree add --detach <plugin-checkout> <plugin-sha>`, then run
+  `cd <scorer-plugin-checkout>` (the LCM-X checkout containing the scorer to run). With Python 3.10+, run
+  `python -m bench.instruments.reliability.scorers.cli --cell-dir <cell-dir> --plugin-tree <plugin-checkout>`
+  using absolute input paths. The scorer and its imported product modules (`externalize`, `config`) come from
+  the current checkout; `--plugin-tree` relocates only the artifact's plugin-source lookup, in memory.
+  That tree must be a clean tracked checkout root at the recorded SHA; subdirectories and dirty trees are
+  refused with exit 2, and exported `GIT_DIR`/`GIT_WORK_TREE` are ignored.
+  Without `--plugin-tree`, the recorded plugin tree must still exist on this machine; otherwise exit 2
+  names the required override. R1 and R2 scorer-decided cells with retained DBs re-score, including the harness's never-fired gate.
+  ACP-process cells take their session root from `verdict.json`; a missing `acp_session` is refused.
+  Exit 2 gives a reason for cells without `cell.json`, `phase-A.json` or a retained `db/lcm.db`, uploaded
+  ERROR verdicts, and drain cells outside acp-process: these cannot be decided by the offline scorer.
+  `stop_after_tool` cells use the same stop-turn scorer with disk-backed observer, transcript, provider,
+  `stop-*.json` snapshots and the last exit in `phase-B.json`; missing required files are refused.
+  ACP-process continuity cells recompute continuity and apply the harness's F4 step, reconstructing scenario
+  findings from the provider log. Missing F4 inputs or unrecorded scenario findings are refused with exit 2.
+  Diagnostic records are sorted before sampling, so different `PYTHONHASHSEED` values produce the same
+  scoring report; absolute paths and runner timings are not portable scoring fields.
+  If a move fails, nothing is deleted and the error names both dirs. A caller that sandboxes host writes to one
   dir passes a `--scratch-root` inside it.
 - `--lcm-env` overrides LCM_* on every cell and is recorded in run.json and MATRIX.md.
 - Output: `results.jsonl`, `MATRIX.md`, `ISSUE-MAP.md`. Re-render: `python report.py <out>`.
@@ -120,8 +140,9 @@ asks it to publish. R1 only.
 
 `publication-failure/rotation-child` (G-REL-1, #541's bar) injects ONE publication failure, on the first rotation-child
 publication; the next child compaction must commit. `publication-failure/rotation-child-persistent` fails every
-rotation-child publication: a data cell (no target, `ci.NON_GATE`) for the degraded mode where no child compaction can
-ever publish, a product question outside stabilization.
+rotation-child publication: a data cell for the degraded mode where no child compaction can ever publish. It targets
+#1797 (exact content preserved under permanent child-publication failure; publication success is never required) and
+gates only B2 deficits through the exact-cell gate described below.
 
 Native cells: native recovery was removed (#777), so the native-only cells (`native-short-prefix/*`,
 `native-long-prefix/*`) were retired with it. `native-on-off/*` remain: an older lcm-x runs with native recovery ON,
@@ -139,7 +160,7 @@ whose plugin module is not the exported tree, or whose interpreter is not the ho
 `sql_dup_counter.py`, `summary_nodes_report.py` and `compaction_ledger.py`
 are ported as `scorers/dupes.py` and `scorers/summary.py` (diagnostics and the B5 ledger).
 
-## First-request continuity (diagnostic, non-gating)
+## First-request continuity (diagnostic, except the promoted cells)
 
 R2 records the first `main` provider request after each committed compaction:
 F1 is the system LCM note, F2 the first user's tag in sole-user cells, F3 the
@@ -152,8 +173,9 @@ ceiling and follows large turns with ordinary turns.
 and short later turns to measure F3 while the newest turn fits. The optional
 `continuity/forced-compaction-then-turn/{in-place,rotation}` reuses `/compress`
 after turn 19 and sends turn 20. Existing `baseline/{mode}/acp` cells supply
-the F3 negative control. These checks are outside `BARS`; the new cells are in
-`ci.NON_GATE`. The two survival-fit shapes keep B1–B7 and B9, but omit B8
+the F3 negative control. These checks are outside `BARS`. The sole-user, survival-fit and
+survival-fit-older-turns cells are in `ci.NON_GATE`; the two forced-compaction-then-turn cells gate on exact bars
+(F4 among them) through `ci.CELL_GATE` (#1588, listed under the nightly CI gate below). The two survival-fit shapes keep B1–B7 and B9, but omit B8
 because survival fitting is their required scenario. Other cell definitions and
 the bar implementations are unchanged.
 
@@ -161,7 +183,7 @@ In continuity cells only, a missing current tag in the last user message is
 a diagnostic `FAIL` on F4, targeting #916 in `survival-fit`; a last user message
 starting with `[LCM survival fit:` records `current_user_projected=true`.
 Other cells still report this condition as `ERROR`. Infrastructure errors
-still gate; continuity findings do not.
+still gate; continuity findings gate only in the promoted forced-compaction-then-turn cells.
 
 `MATRIX.md` reports per-host/cell counts and each compaction's kind, turn,
 previous-reply tag and whether its input row was replaced. Unknown data and
@@ -329,8 +351,8 @@ gateway cells are UNSUPPORTED with the reason; `--transport gateway-process` is 
 Triggers: daily schedule and `workflow_dispatch` (effective once on main), and `pull_request` path-filtered to
 `bench/instruments/reliability/**` and the workflow file. Not a required check; default token only. The workflow
 names its hosts in its own matrix (adding a `hosts.ci.json` entry alone adds no nightly coverage); each named host is
-pinned in `hosts.ci.json`: ref-0.21.5, floor-0.21.3 and r34.4-0.21.5 on Python 3.11, upstream-main and upstream-uid
-on 3.14. floor-0.21.3 is upstream v2026.9.14 (345cd2b0), the oldest host the plugin declares (`requires_hermes: ">=0.21.3"`).
+pinned in `hosts.ci.json`: ref-0.21.5, floor-0.21.3, r34.4-0.21.5 and r34.10-0.21.5 on Python 3.11, r34.15-0.21.5
+(the fleet runtime candidate) on 3.12, upstream-main and upstream-uid on 3.14. floor-0.21.3 is upstream v2026.9.14 (345cd2b0), the oldest host the plugin declares (`requires_hermes: ">=0.21.3"`).
 It replaced customer-0.21.2 in the nightly matrix: that host is below the declared floor, so Hermes skips the plugin
 there and every cell errors by design. Its `hosts.ci.json` entry stays for local runs and history.
 floor-0.21.3 does not re-anchor the turn after a post-tool compaction, so on those turns its request copy replaces the
@@ -347,6 +369,13 @@ plugin sha) against that transport's `--cells all` list. Linux has no `sandbox-e
 A FAIL with empty or missing `failed_bars` always gates; an open target absent from `ISSUES` declares no bars, and a
 target listed in `cells.ISSUE_HOSTS` declares its bars only on hosts whose name starts with one of its prefixes.
 G-REL-1 diagnostics list uncovered bars, targets and open targets.
+The exact-cell additions in `ci.CELL_GATE` are: R2 `continuity/forced-compaction-then-turn/{in-place,rotation}`
+on every pinned host at B1/B2/B3/B4/B8/F4, plus B9 on `upstream-uid`; R1 `native-on-off/{v0.23.3,v0.24.3}/in-place`
+at B3/B4/B8; and R1 `overflow-recovery-restart/{in-place,rotation}` and `upgrade-crash-after-rotation/rotation`
+at B1/B2. The last three gate on UID-capable hosts; stamp-only failures remain excused by open #534/#1508
+and #1501/#1506 targets via `ISSUE_HOSTS`. Other continuity cells remain outside the gate.
+On runtime hosts, R1 `publication-failure/rotation-child-persistent` gates only on derived `B2D`: a B2 FAIL
+with a positive or missing deficit count; B1 mismatches and B2 surplus remain accepted under #1588, independently of #1797's open state.
 
 ### Claim boundary
 R2 proves the plugin's behaviour through a real `hermes acp` process on the pinned host shas, with every model route

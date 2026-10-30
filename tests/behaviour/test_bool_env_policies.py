@@ -77,7 +77,7 @@ BOOLEAN_POLICIES = {
     **dict.fromkeys("""
         LCM_FRESH_TAIL_PRESSURE_YIELD_ENABLED LCM_DYNAMIC_LEAF_CHUNK_ENABLED
         LCM_CACHE_FRIENDLY_CONDENSATION_ENABLED LCM_DEFERRED_MAINTENANCE_ENABLED
-        LCM_THRESHOLD_FULL_SWEEP_ENABLED LCM_EXTRACTION_ENABLED LCM_ASSERTIONS_ENABLED
+        LCM_THRESHOLD_FULL_SWEEP_ENABLED LCM_EXTRACTION_ENABLED LCM_ASSERTIONS_ENABLED LCM_ENTITIES_ENABLED
         LCM_QUERY_VIEWS_ENABLED LCM_ADAPTIVE_RETRIEVAL_ENABLED LCM_ASSERTION_EXTRACTION_ENABLED
         LCM_SENSITIVE_PATTERNS_ENABLED LCM_EMBEDDING_PRIVACY_ENABLED
         LCM_LARGE_OUTPUT_EXTERNALIZATION_ENABLED LCM_LARGE_OUTPUT_ACTIVE_REPLAY_STUBBING_ENABLED
@@ -85,7 +85,7 @@ BOOLEAN_POLICIES = {
         LCM_EMBEDDINGS_ENABLED LCM_RERANK_ENABLED LCM_RECALL_REFERENCE_STRICT LCM_RECALL_FTS_ANCHOR
         LCM_PROACTIVE_RECALL_ENABLED LCM_PREANSWER_EVIDENCE_ENABLED LCM_SELECTIVE_COMPILER_ENABLED
         LCM_EMBEDDING_BINARY_PRESCREEN LCM_DOCTOR_CLEAN_APPLY_ENABLED LCM_EMPTY_LIFECYCLE_GC_ENABLED
-        LCM_TEMPORAL_ROLLUPS_ENABLED LCM_BACKGROUND_LEAF_PREP_ENABLED
+        LCM_TEMPORAL_ROLLUPS_ENABLED LCM_BACKGROUND_LEAF_PREP_ENABLED LCM_SENDER_CAPTURE
     """.split(), (None, TRUE_VALUES, FALSE_VALUES)),
     "LCM_ENABLE_SLASH_COMMAND": (False, TRUE_VALUES, ()),
     "LCM_IDENTITY_ANCHOR": (True, (), FALSE_VALUES),
@@ -100,10 +100,10 @@ RAW_READERS = {
     "config.py": {
         "_parse_int_env", "_parse_float_env", "_parse_bool_env", "_parse_str_env",
         "_disabled_tool_names", "host_message_uid_mode", "_parse_int_env_with_source",
-        "_parse_float_env_with_source", "_hermes_config_path", "_lcm_config_string_with_source", "from_env",
+        "_parse_float_env_with_source", "_hermes_config_path", "_lcm_config_string_with_source",
+        "_warn_env_range", "from_env", "containment_base_dir", "companion_enable_command",
     },
     "db_bootstrap.py": {"_integrity_check_interval_hours"},
-    "diagnostics.py": {"_enforce_state_db_containment"},
     "embedding_provider.py": {"probe_provider_availability", "_request", "rerank", "__init__"},
     "engine.py": {"_set_context_length", "_get_allowed_hermes_base"},
     "externalize.py": {"get_large_output_storage_dir"},
@@ -132,7 +132,7 @@ def test_boolean_policy_inventory():
             for alias in node.names if alias.name == "_parse_bool_env"
         }
         for function in (node for node in ast.walk(tree) if isinstance(node, ast.FunctionDef)):
-            if any(isinstance(node, ast.Call) and ast.unparse(node.func) in ("os.environ.get", "os.getenv")
+            if any(isinstance(node, ast.Call) and ast.unparse(node.func) in ("os.environ.get", "os.getenv", "lcm_env_get")
                    for node in ast.walk(function)):
                 raw_readers.setdefault(path.name, set()).add(function.name)
         for call in calls:
@@ -155,6 +155,7 @@ def test_boolean_policy_inventory():
     assert call_sites == {
         ("__init__.py", "name"), ("identity_anchor.py", "'LCM_IDENTITY_ANCHOR'"),
         ("db_bootstrap.py", "BACKGROUND_INTEGRITY_ENV"),
+        ("sender_capture.py", "'LCM_SENDER_CAPTURE'"),
     }
     assert derived == BOOLEAN_POLICIES
     assert raw_readers == RAW_READERS

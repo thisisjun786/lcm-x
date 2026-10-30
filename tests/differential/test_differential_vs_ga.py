@@ -10,7 +10,13 @@ from pathlib import Path
 
 from .cases import exact_cases, generated_cases, projection_cases
 from .run import run
-from .trees import DEFAULT_BASELINE, PrerequisiteUnavailable, skip_or_fail
+from .trees import BASELINE_CONFIG, BASELINES, DEFAULT_BASELINE, PrerequisiteUnavailable, skip_or_fail
+
+
+def test_default_baseline_is_v028_with_native_defaults():
+    assert DEFAULT_BASELINE == "v0.28.0"
+    assert BASELINES[DEFAULT_BASELINE] == "709099b3a397a7893a7abae8802ebe7bf605f79e"
+    assert BASELINE_CONFIG[DEFAULT_BASELINE] == "bare"
 
 
 @pytest.fixture(scope="module")
@@ -164,6 +170,7 @@ def test_projection_user_marks_are_relative_after_v026(baseline, marks):
 @pytest.mark.parametrize("baseline,config,inherited", [
     ("v0.26.2", "managed", dict(cases=0, marks=0)),
     ("v0.27.0", "bare", dict(cases=1, marks=1)),
+    ("v0.28.0", "bare", dict(cases=1, marks=1)),
 ])
 def test_baseline_defaults_and_inherited_user_marks(baseline, config, inherited, tmp_path, monkeypatch):
     import json

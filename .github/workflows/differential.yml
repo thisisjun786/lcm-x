@@ -3,6 +3,7 @@ on:
   schedule: [{cron: "41 4 * * *"}]
   workflow_dispatch:
   pull_request:
+  merge_group:
 permissions: {contents: read}
 concurrency: {group: '${{ github.workflow }}-${{ github.ref }}', cancel-in-progress: true}
 jobs:
@@ -18,7 +19,7 @@ jobs:
         shell: bash
         env:
           EVENT_NAME: ${{ github.event_name }}
-          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha }}
           # Keep identical to scripts/maintainer_gate.py's TURN_PATH_FILES.
           TURN_PATH_FILES: |-
             __init__.py
@@ -67,6 +68,7 @@ jobs:
             rollup_builder.py
             rollup_periods.py
             rollup_store.py
+            sender_capture.py
             sanitize.py
             schemas.py
             session_patterns.py
@@ -83,7 +85,7 @@ jobs:
             tool_registry.py
         run: |
           relevant=true
-          if [[ "$EVENT_NAME" == pull_request ]]; then
+          if [[ "$EVENT_NAME" == pull_request || "$EVENT_NAME" == merge_group ]]; then
             relevant=false
             changed_paths=$(git diff --no-renames --name-only "$PR_BASE_SHA"...HEAD)
             while IFS= read -r path; do
@@ -199,7 +201,7 @@ jobs:
                   # unit-test fallback dependency-free. LCMEngine overrides it.
                   self.context_length = context_length
           STUB
-      - run: git fetch --no-tags --depth=1 origin c67d7633d963a2ffd24cf90995189ee58e2f88c7 6800cf45ad05280e6cf6fa9e1ad96c62b7132646
+      - run: git fetch --no-tags --depth=1 origin 709099b3a397a7893a7abae8802ebe7bf605f79e c67d7633d963a2ffd24cf90995189ee58e2f88c7 6800cf45ad05280e6cf6fa9e1ad96c62b7132646
         if: steps.relevance.outputs.relevant == 'true'
       - name: Run and report differential
         if: steps.relevance.outputs.relevant == 'true'

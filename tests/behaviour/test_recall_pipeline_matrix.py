@@ -2,6 +2,7 @@
 
 from copy import deepcopy
 import json
+import os
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -18,7 +19,15 @@ GOLDENS = Path(__file__).with_name("recall_pipeline_golden.json")
 def golden(name, raw):
     # All IDs are assigned in fixture order and timestamps pinned before seeding.
     # Compare the entire JSON document, including absence of optional fields.
-    expected = json.loads(GOLDENS.read_text())[name]
+    scenarios = json.loads(GOLDENS.read_text())
+    if os.environ.get("RECALL_MATRIX_CAPTURE") == "1":
+        scenarios[name] = json.loads(raw)
+        GOLDENS.write_text("{\n" + ",\n".join(
+            json.dumps(key) + ": " + json.dumps(value, sort_keys=True, ensure_ascii=False)
+            for key, value in sorted(scenarios.items())
+        ) + "\n}\n")
+        return
+    expected = scenarios[name]
     assert json.loads(raw) == expected
 
 
@@ -56,6 +65,8 @@ def arms(monkeypatch, engine, *, fts=(), summary=(), chunk=(), leads=(), rerank=
     engine._config.embeddings_enabled = True
     engine._config.rerank_enabled = rerank
     provider = SimpleNamespace(provider_id="voyage", model_id="fixture", last_usage_tokens=0)
+    engine._config.embedding_provider = provider.provider_id
+    engine._config.embedding_model = provider.model_id
     provider.rerank = lambda query, documents, **kwargs: [(i, 0.9) for i in reversed(range(len(documents)))]
     monkeypatch.setattr(tools, "_resolve_recall_provider", lambda *a, **k: provider)
     monkeypatch.setattr(tools, "_resolve_recall_chunk_provider", lambda *a, **k: provider)

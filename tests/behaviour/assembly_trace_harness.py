@@ -9,6 +9,7 @@ pinned. Store faults use SQLite triggers. Observers call the real implementation
 private helper names and source lines never enter the golden trace.
 """
 from __future__ import annotations
+from tests.messages_snapshot import messages_snapshot_columns
 
 import argparse
 import ast
@@ -424,7 +425,8 @@ def snapshot(engine: Any, canonical: Canonical, result: Any = None) -> dict[str,
     for name in sorted(OBSERVED_ATTRIBUTES):
         value = observed_attribute(engine, name)
         if name == '_store':
-            value = {table: [tuple(row) for row in engine._store._conn.execute(f'SELECT * FROM {table} ORDER BY 1')]
+            value = {table: [tuple(row) for row in engine._store._conn.execute(
+                         f'SELECT {messages_snapshot_columns(engine._store._conn) if table == "messages" else "*"} FROM {table} ORDER BY 1')]
                      for table in ('messages', 'metadata')}
         elif name == '_dag':
             value = engine._dag.get_session_nodes('S', limit=10000)
@@ -440,6 +442,7 @@ def snapshot(engine: Any, canonical: Canonical, result: Any = None) -> dict[str,
 
 
 def observe(case: Scenario, root: Path) -> Trace:
+    root = root.resolve()
     root.mkdir(parents=True, exist_ok=True)
     canonical, events = Canonical(root), []
     active = False
@@ -651,7 +654,7 @@ def main() -> None:
         for key in product_env_keys(ROOT) | product_env_keys(args.repo.resolve()):
             os.environ.pop(key, None)
         with tempfile.TemporaryDirectory(prefix='assembly-trace-') as directory:
-            result = {case.name: observe(case, Path(directory).resolve() / case.name) for case in SCENARIOS}
+            result = {case.name: observe(case, Path(directory) / case.name) for case in SCENARIOS}
         args.out.write_text(json.dumps(result, sort_keys=True, indent=0) + '\n')
         print(f'Wrote {len(result)} assembly scenarios')
     finally:

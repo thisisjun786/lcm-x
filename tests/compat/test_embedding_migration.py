@@ -5,7 +5,8 @@ from pathlib import Path
 
 import pytest
 
-from tests.compat.helpers import run_old
+from tests.compat.helpers import PREVIOUS_GA, run_old
+from tests.harness import make_engine
 from tests.compat.storage_fixtures import (
     VECTOR_TABLES, assert_calls_once, assert_complete_vectors, assert_preserved, bind,
     embed_all, install_fakes, plugin, seed_history, storage_config, table_hashes, vector_ids, warmup,
@@ -31,15 +32,16 @@ finally:
 '''
 
 
+@pytest.mark.parametrize("source_reader", ("v0.26.2", PREVIOUS_GA))
 @pytest.mark.parametrize("dtype", ["float32", "int8"])
 def test_previous_ga_vectors_survive_upgrade(
     tmp_path: Path, old_tree: Callable[[str], Path], host_root: Path,
-    monkeypatch: pytest.MonkeyPatch, dtype: str,
+    monkeypatch: pytest.MonkeyPatch, dtype: str, source_reader: str,
 ) -> None:
     from collections import Counter
     import sqlite3
 
-    old = run_old(old_tree("v0.26.2"), tmp_path, host_root, OLD_EMBEDDED_STORE, data=dtype)
+    old = run_old(old_tree(source_reader), tmp_path, host_root, OLD_EMBEDDED_STORE, data=dtype)
     before = table_hashes(tmp_path, VECTOR_TABLES)
     assert all(before[table] for table in VECTOR_TABLES if dtype == "int8" or not table.endswith("binary"))
     with sqlite3.connect(tmp_path / "lcm.db") as conn:
@@ -52,7 +54,11 @@ def test_previous_ga_vectors_survive_upgrade(
             if row[0] and row[0].strip()]
     provider = install_fakes(monkeypatch)
     config = storage_config(tmp_path, embeddings=True, dtype=dtype, small=True)
-    engine = plugin("engine").LCMEngine(config=config, hermes_home=str(tmp_path / "home"))
+    engine = make_engine(tmp_path, embeddings_enabled=config.embeddings_enabled,
+                         embedding_provider=config.embedding_provider, embedding_model=config.embedding_model,
+                         embedding_storage_dtype=config.embedding_storage_dtype,
+                         fresh_tail_count=config.fresh_tail_count, leaf_chunk_tokens=config.leaf_chunk_tokens,
+                         large_output_externalization_path=config.large_output_externalization_path)
     try:
         bind(engine)
         assert engine.drain_embedding_maintenance(timeout=10)

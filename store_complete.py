@@ -63,6 +63,8 @@ class HiddenBacklog(NamedTuple):
 class StoreCompleteMixin:
     """Mixed into LCMEngine; reads ``self._store``, ``self._lifecycle`` and the identity helpers."""
 
+    _retained_escape_enabled = True  # #1162: engine-only kill switch, never a config key
+
     def _store_complete_frontier(self) -> int:
         """The publication frontier (the lifecycle row), never below the in-process marker. A frontier
         moved by `/lcm rotate apply` (the backup-first operator command) is honoured by design."""
@@ -299,18 +301,21 @@ class StoreCompleteMixin:
         return out
 
     def _store_complete_input(self, chunk, claims, full_map, view, raw_chunk, frontier, carry, budget,
-                              accounted_ids=(), scale: int = 1, scanned=None, copy_lookup=None) -> Optional[list]:
-        """Return explicit source claims, or None for unchanged legacy input.
-
-        UID/fail-open input preserves host groups and can cover a sparse set.
-        The legacy fallback retains its bounded store-prefix construction.
-        """
+                              accounted_ids=(), scale: int = 1, scanned=None, copy_lookup=None,
+                              escape_retained: bool = False, allow_retained_escape: bool = False,
+                              lift_allowed: bool = True) -> Optional[list]:
+        """``[(input_row, [store_id, ...]), ...]`` in walk order (when the host reordered the leaf,
+        ``_store_complete_order`` holds each input row's store-order rank); ``[]`` when the leaf cannot start
+        (a retained occurrence, no source rows, or a contiguity cut); None: today's input.
+        UID/fail-open input (fork) preserves host groups and can cover a sparse set."""
         from .identity_anchor import _match_occurrences
 
         self._store_complete_excluded, self._store_complete_cut = [], False
         self._store_complete_copy_exclusion_proofs = {}
         self._store_complete_blocked = None  # #1162: (store_id, role, kind, chunk head position) of a [] return
         self._store_complete_empty_reason = ""
+        self._store_complete_escaped = []
+        self._store_complete_order = {}  # #2007: id(input row) -> store-order rank, set only for a host-reordered leaf
         given_claims = claims
         uid_pairs, superseded = self._uid_pairing_rows(view)
         self._uid_source_bindings = {}
@@ -330,11 +335,13 @@ class StoreCompleteMixin:
         taken = {full_map[id(m)] for m in chunk if id(m) in full_map} | {s for ids in claims.values() for s in ids}
         top = max(taken, default=0)
         end = top - 1 if top > frontier else min(  # no host row: hidden backlog below the first retained row
-            (store_id - 1 for store_id in set(full_map.values()) - passive if store_id > frontier), default=None)
+            (store_id - 1 for store_id in set(full_map.values()) - passive
+             if store_id > frontier and not escape_retained), default=None)
         rows, truncated = scanned if scanned is not None else (
             self._store_complete_owned_rows(frontier, end, carry, scale, passive)
             if end is None or end > frontier else ([], False))
-        loose = [row for row in rows if int(row["store_id"]) not in taken | passive | set(full_map.values())]
+        loose = [row for row in rows if int(row["store_id"]) not in
+                 taken | passive | (set() if escape_retained else set(full_map.values()))]
         ignored = {int(row["store_id"]) for row in loose if self._matches_ignore_message_patterns(row, stored_row=True)}
         covered = self._store_complete_node_covered([int(row["store_id"]) for row in loose if int(row["store_id"]) not in ignored])
         # A newer bound version is the live occurrence. Keep older versions in
@@ -349,10 +356,14 @@ class StoreCompleteMixin:
             else self._stored_row_forms
         shown = _match_occurrences(candidates, keys_of, occurrences) if occurrences else {}
         blocked = set()
+        escaped = {int(row["store_id"]): "mapped" for row in candidates
+                   if escape_retained and int(row["store_id"]) in full_map.values()}
         for store_id, idx in shown.items():
             if id(view[idx]) in in_chunk:  # the chunk row's own text is this stored occurrence
                 claims.setdefault(id(view[idx]), []).append(store_id)
                 taken.add(store_id)
+            elif escape_retained:
+                escaped[store_id] = "shown"
             else:  # a retained occurrence: never hidden, the leaf ends before it
                 blocked.add(store_id)
         hidden = [row for row in candidates if int(row["store_id"]) not in taken | blocked]
@@ -371,14 +382,29 @@ class StoreCompleteMixin:
         composite_claims = {min(ids): sorted(ids) for message_id, ids in claims.items()
                             if len(ids) > 1 and message_id not in full_map}
         rehydrated: dict = {}  # fork: store_id -> the stored-bytes row that now carries it (see the rows loop)
+        # fork: rehydration is a fallback, tried once after upstream's walk and escape left the leaf empty.
+        rehydrate = bool(getattr(self, "_fork_rehydrate_active", False))
         pending_composite: set = set()
 
         def ids_of(message, ids) -> list:
             found = list(ids) + ([full_map[id(message)]] if id(message) in full_map else [])
             return [s for s in found if s not in rehydrated or rehydrated[s] is message] if rehydrated else found
 
-        def position(message) -> int:
-            return max(ids_of(message, claims.get(id(message), ())), default=0)
+        def position(message, ids=None) -> int:
+            return max(ids_of(message, claims.get(id(message), ()) if ids is None else ids), default=0)
+
+        def calls(messages):
+            return {_tool_call_id(call) for m in messages for call in m.get("tool_calls") or ()} - {""}
+
+        def results(messages):
+            return {str(m.get("tool_call_id") or "").strip() for m in messages if m.get("role") == "tool"} - {""}
+
+        retained = ([text[sid] for sid in escaped if sid in text] +
+                    [m for m in view if id(m) not in in_chunk]) if escape_retained else []
+        cross = (calls(chunk) & results(retained)) | (calls(retained) & results(chunk))
+        group_cut = min((sid for sid, m in [*[(int(r["store_id"]), r) for r in rows],
+                                           *[(position(m), m) for m in chunk]]
+                         if sid > frontier and (calls([m]) & cross or results([m]) & cross)), default=None)
 
         out, used, excluded, dependent, index = [], 0, [], False, 0
         group: list = []  # the open tool group: [call ids, its index in out, used before it, answered ids]
@@ -421,6 +447,8 @@ class StoreCompleteMixin:
         def emit_chunk(limit) -> bool:
             nonlocal index, dependent
             while index < len(chunk) and (limit is None or position(chunk[index]) < limit):
+                if group_cut is not None and position(chunk[index]) >= group_cut:
+                    return False  # I9: no host half of an escaped tool group is consumed
                 if not take(chunk[index], [s for s in claims.get(id(chunk[index]), []) if s not in rehydrated]):
                     return False
                 dependent = dependent and chunk[index].get("role") not in ("user", "system")
@@ -430,13 +458,17 @@ class StoreCompleteMixin:
         complete = True
         for row_index, row in enumerate(rows):
             store_id, role = int(row["store_id"]), row.get("role")
+            if group_cut is not None and store_id >= group_cut:
+                complete = False
+                break
             if not emit_chunk(store_id):
                 complete = False
                 break
             if store_id in ignored:  # as compaction.py: an ignored row of any role makes the next replies dependent
                 dependent = True
                 continue
-            if store_id in taken and store_id not in passive and store_id not in mapped_ids and index < len(chunk) \
+            if rehydrate and store_id in taken and store_id not in passive and store_id not in mapped_ids \
+                    and index < len(chunk) \
                     and position(chunk[index]) > store_id and store_id in single_claims \
                     and not any(store_id in ids_of(m, i) for m, i in out):
                 # fork: the host row that claims this store row sits behind host rows mapped to LATER store
@@ -528,7 +560,9 @@ class StoreCompleteMixin:
                 scanned = ([row for row in rows if int(row["store_id"]) < call] + extended, truncated)
                 return self._store_complete_input(chunk, given_claims, full_map, view, raw_chunk, frontier, carry,
                                                   budget, accounted_ids, scale=_SCAN_EXTEND, scanned=scanned,
-                                                  copy_lookup=copy_lookup)
+                                                  copy_lookup=copy_lookup, escape_retained=escape_retained,
+                                                  allow_retained_escape=allow_retained_escape,
+                                                  lift_allowed=lift_allowed)
             else:  # the documented oversized-group exception: admitted as read
                 logger.warning("LCM store-complete leaf: a first tool group is still open after a %d-row scan; "
                                "admitted as read (frontier=%d)", _SCAN_LIMIT * scale, frontier)
@@ -544,20 +578,113 @@ class StoreCompleteMixin:
             out = out[:next(i for i, (m, ids) in enumerate(out) if any(s > hole for s in ids_of(m, ids)))]
             complete = False
             if not out:
-                hole_row = next((row for row in rows if int(row["store_id"]) == hole), {})
-                self._store_complete_empty_reason = (  # fork: name the row the leaf could not account for
-                    "leaf input cannot form a contiguous stored prefix (hole=%d role=%s frontier=%d last=%d)"
-                    % (hole, hole_row.get("role"), frontier, last))
+                self._store_complete_empty_reason = "leaf input cannot form a contiguous stored prefix"
         if copy_proofs and not any(ids_of(m, ids) for m, ids in out):
             return self._store_complete_input(chunk, given_claims, full_map, view, raw_chunk, frontier, carry,
-                                              budget, accounted_ids, scale=scale, scanned=(rows, truncated), copy_lookup=({}, set()))
+                                              budget, accounted_ids, scale=scale, scanned=(rows, truncated), copy_lookup=({}, set()),
+                                              escape_retained=escape_retained, allow_retained_escape=allow_retained_escape,
+                                              lift_allowed=lift_allowed)
+        if not out and allow_retained_escape and self._retained_escape_enabled:
+            blocked_row = self._store_complete_blocked
+            lifted = self._context_aware_leaf_cap() or max(budget, 1) * _SCAN_EXTEND
+            if (blocked_row and not escape_retained) or (not blocked_row and lift_allowed and
+                    self._store_complete_empty_reason == "leaf input cannot form a contiguous stored prefix"
+                    and lifted > budget):
+                result = self._store_complete_input(
+                    chunk, given_claims, full_map, view, raw_chunk, frontier, carry,
+                    budget if blocked_row else lifted, accounted_ids, scale=scale, scanned=(rows, truncated),
+                    copy_lookup=copy_lookup, escape_retained=bool(blocked_row) or escape_retained,
+                    allow_retained_escape=not escape_retained, lift_allowed=lift_allowed and bool(blocked_row))
+                if blocked_row is not None:
+                    self._store_complete_blocked = blocked_row
+                if result or blocked_row is not None or not single_claims:
+                    return result
+                out = []  # the lifted walk is still cut: the fork fallback below may read the row itself
+        if (not out and not rehydrate and not escape_retained and lift_allowed and single_claims
+                and self._store_complete_empty_reason == "leaf input cannot form a contiguous stored prefix"):
+            # fork (6d94edf6): the host row that alone claims an older store row sits behind rows mapped to
+            # later store rows, so no walk can emit it in store order. Read that row from its stored bytes
+            # at its own position (the host row stays input); duplicated text, never a lost row.
+            saved = (self._store_complete_excluded, self._store_complete_cut, self._store_complete_blocked,
+                     self._store_complete_empty_reason, self._store_complete_escaped, self._store_complete_order,
+                     self._store_complete_copy_exclusion_proofs)
+            self._fork_rehydrate_active = True
+            try:
+                retried = self._store_complete_input(
+                    chunk, given_claims, full_map, view, raw_chunk, frontier, carry, budget, accounted_ids,
+                    scale=scale, scanned=(rows, truncated), copy_lookup=copy_lookup, lift_allowed=False)
+            finally:
+                self._fork_rehydrate_active = False
+            if retried:
+                return retried
+            (self._store_complete_excluded, self._store_complete_cut, self._store_complete_blocked,
+             self._store_complete_empty_reason, self._store_complete_escaped, self._store_complete_order,
+             self._store_complete_copy_exclusion_proofs) = saved
         if not out or (not any(ids_of(m, ids) for m, ids in out)
                        and all(self._is_context_summary_content(m.get("content")) for m in chunk)):
             if not self._store_complete_blocked and not self._store_complete_empty_reason:
+                # This branch already established that no output row carries a source.
                 self._store_complete_empty_reason = (
                     f"leaf input has no stored source rows (input_rows_without_source={len(out)})")
             return []  # nothing to cover: at most a host summary of rows already at or below the frontier
         emitted = sum(1 for message, _ids in out if id(message) in in_chunk)
+        self._store_complete_escaped = [(sid, m.get("role"), escaped[sid])
+                                        for m, ids in out for sid in ids if sid in escaped]
+        # #2007: the walk above decides WHICH rows the leaf takes and their order (a host prefix of the chunk,
+        # which _leaf_consumption and a rescue prefix rely on); the summarizer reads them in store order, each
+        # tool group whole, through the rank published in _store_complete_order.
+        # A call group is an assistant row with tool calls plus every tool row that answers it: the call with
+        # that id stored nearest before the result, else the nearest preceding one in the walk (a repeated id
+        # follows the store, #2011). Every other row with a store id is its own unit; a row
+        # without one (position 0) stays behind the row before it, a leading one first. A group sorts at
+        # its call's store position or, when the call has none, at its earliest stored result; inside it
+        # the call stays first and its results follow in store order. A leaf whose stored rows are already
+        # in store order gets no rank, even when the store holds a row inside a group; in a regrouped
+        # leaf such a row follows the group. The sorts are stable.
+        def call_ids(message) -> set:
+            return calls([message]) if message.get("role") == "assistant" else set()
+
+        def tool_id(message) -> str:
+            return str(message.get("tool_call_id") or "").strip() if message.get("role") == "tool" else ""
+
+        answered = {call_id for message, _ids in out for call_id in call_ids(message)}
+        parts, part = [], None  # part = [row, *id-less rows behind it], in walk order
+        for message, ids in out:
+            if tool_id(message) in answered or call_ids(message) or position(message, ids) or part is None:
+                part = [(message, ids)]
+                parts.append(part)
+            else:
+                part.append((message, ids))
+        heads, owners = {}, {}  # walk index of a unit's head -> unit; call id -> [(store position, walk index)]
+        for index, part in enumerate(parts):
+            if call_ids(part[0][0]):
+                heads[index] = [part]  # unit = [[head, *id-less], [result, *id-less], ...]
+                for call_id in call_ids(part[0][0]):
+                    owners.setdefault(call_id, []).append((position(*part[0]), index))
+        for index, part in enumerate(parts):
+            if index in heads:
+                continue
+            at, mine = position(*part[0]), owners.get(tool_id(part[0][0]), [])
+            owner = max([o for o in mine if at and 0 < o[0] < at], default=None) or max(
+                [o for o in mine if o[1] < index], key=lambda o: o[1], default=None)
+            if owner is None:
+                heads[index] = [part]
+            else:
+                heads[owner[1]].append(part)
+        units = [heads[index] for index in sorted(heads)]
+
+        def by_position(parts) -> list:  # stable; a part without a store id keeps its predecessor's key
+            keys, key = [], 0
+            for unit_parts in parts:
+                key = position(*unit_parts[0][0]) or min((p for p in (position(*r[0]) for r in unit_parts[1:]) if p),
+                                                        default=0) or key
+                keys.append(key)
+            return [item for _key, item in sorted(zip(keys, parts), key=lambda pair: pair[0])]
+        stored = [p for p in (position(m, ids) for m, ids in out) if p]
+        if any(a > b for a, b in zip(stored, stored[1:])):
+            ordered = [pair for unit in by_position(units)
+                       for part in [unit[0], *(p[0] for p in by_position([[r] for r in unit[1:]]))] for pair in part]
+            self._store_complete_order = {id(m): i for i, (m, _ids) in enumerate(ordered)}
         if emitted == len(out) == len(chunk) and not excluded and not any(ids for _m, ids in out):
             return None  # nothing hidden, claimed or excluded: today's input and mapping
         last = max(s for m, ids in out for s in ids_of(m, ids)) if any(ids_of(m, ids) for m, ids in out) else frontier

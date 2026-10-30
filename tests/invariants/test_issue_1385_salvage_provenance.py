@@ -5,6 +5,8 @@ import json
 
 import pytest
 
+from hermes_lcm.compaction import CompactionMixin
+from tests.harness import engine_context, stored_rows
 from tests.test_issue_773_hermes_pruned_tool_replay import (
     CLEARED,
     SYSTEM,
@@ -19,7 +21,7 @@ from tests.test_issue_773_hermes_pruned_tool_replay import (
 
 
 @pytest.mark.parametrize("matcher", ["host-rewrite", "commit-proof"])
-def test_legacy_placeholder_copy_with_host_rewrite_replays_once(make_engine, matcher):  # noqa: F811
+def test_legacy_placeholder_copy_with_host_rewrite_replays_once(make_engine, matcher, monkeypatch):  # noqa: F811
     """I1/I2/I8: an older literal copy also admits its salvage alias on replay.
 
     Two newer results let the host borrow X's full identity; the rewritten final
@@ -31,11 +33,14 @@ def test_legacy_placeholder_copy_with_host_rewrite_replays_once(make_engine, mat
     first._ingest_messages(original)
     if matcher == "commit-proof":
         identities = [first._proof_replay_identity(row) for row in original]
-        first._persist_compress_commit_proof({
-            **first._emission_binding(), "session_id": first._session_id,
-            "conversation_id": first._conversation_id,
-            "output": identities, "output_effective": identities, "emissions": [],
-        })
+        with monkeypatch.context() as legacy:
+            legacy.setattr(type(first), "_write_compress_commit_proof_payload",
+                           CompactionMixin._write_compress_commit_proof_payload)
+            first._persist_compress_commit_proof({
+                **first._emission_binding(), "session_id": first._session_id,
+                "conversation_id": first._conversation_id,
+                "output": identities, "output_effective": identities, "emissions": [],
+            })
         assert first._durable_commit_proof_payload() is not None
     legacy = [_call("X"), _result("X", CLEARED),
               _call("Y"), _result("Y", "result Y"),
@@ -60,6 +65,49 @@ def test_legacy_placeholder_copy_with_host_rewrite_replays_once(make_engine, mat
     assert _grouped(rows)
     engine._ingest_messages(copy.deepcopy(host))
     assert stored(engine) == rows
+
+
+@pytest.mark.parametrize("stored_content,replayed_content,already_durable", [
+    (CLEARED, CLEARED, True),
+    ("X" * 300, CLEARED, True),
+    (CLEARED, CLEARED + " different literal", False),
+    (CLEARED, "genuinely new result with the same id", False),
+], ids=["literal", "alias", "different-literal", "new-same-id"])
+def test_middle_window_literal_placeholder_replay(tmp_path, stored_content, replayed_content, already_durable):
+    """#1437, I1/I2/I10: exact literal and proven alias forms share the suffix rule."""
+    options = dict(window=200_000, fresh_tail_count=64,
+                   large_output_externalization_enabled=False,
+                   large_output_active_replay_stubbing_enabled=False)
+    original = [SYSTEM, {"role": "user", "content": "original turn"},
+                _call("X"), _result("X", "X" * 300)]
+    legacy = [_call("X"), _result("X", stored_content),
+              _call("Y"), _result("Y", "anchor Y"),
+              {"role": "user", "content": "later durable turn"}]
+    with engine_context(tmp_path, **options) as first:
+        first.ingest(copy.deepcopy(original))
+        # A legacy writer persisted this copy; current ingestion need not create it.
+        for row in legacy:
+            first._store.append(first.current_session_id, row, conversation_id=first._conversation_id)
+        before = stored_rows(first)
+    with engine_context(tmp_path, **options) as engine:
+        new_pairs = [_call("N1"), _result("N1", "new N1"),
+                     _call("N2"), _result("N2", "new N2")]
+        host = [_call("X"), _result("X", replayed_content), *legacy[2:4], *new_pairs]
+        unchanged_host = copy.deepcopy(host)
+        engine.ingest(host)
+        rows = stored_rows(engine)
+        added = rows[len(before):]
+        print("middle-window rows:", [(r["role"], r.get("tool_call_id"), r["content"]) for r in rows])
+        print("middle-window reconciliation:", engine._last_ingest_reconciliation)
+        assert rows[:len(before)] == before
+        assert host == unchanged_host
+        expected = new_pairs if already_durable else host
+        assert [(r["role"], r.get("tool_call_id"), r["content"]) for r in added] == [
+            (r["role"], r.get("tool_call_id"), r["content"]) for r in expected
+        ]
+        assert _grouped(rows)
+        engine.ingest(copy.deepcopy(host))
+        assert stored_rows(engine) == rows
 
 
 @pytest.mark.parametrize("content", [

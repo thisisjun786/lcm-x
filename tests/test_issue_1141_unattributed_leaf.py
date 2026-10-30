@@ -63,6 +63,10 @@ def _assert_refused_before_call(engine, summarize, calls_before, caplog):
     assert engine.get_status()["uid_coverage"]["unpaired_count"] > 0
     assert engine._no_progress_hold_active()
     assert engine._no_progress_hold[1] == "no_progress"
+    # Fork: an unpaired backlog is an ordinary completed no-progress pass (not a #1147 refusal), so the
+    # restart-proof #1880 record is written for it, like any other no_progress pass.
+    assert engine._store.read_metadata_json(
+        f"compaction_no_progress:v1:{engine._session_id}")["reason"] == "no_progress"
 
 
 def _two_passes(engine, view, summarize, caplog):
@@ -74,6 +78,7 @@ def _two_passes(engine, view, summarize, caplog):
     engine._schedule_pre_compaction_assertions = extraction
     engine._config.extraction_enabled = engine._config.assertion_extraction_enabled = True
     for _ in range(2):
+        engine._clear_persisted_no_progress_hold()
         engine._no_progress_hold = None  # exercise another pass after the hold expires
         with caplog.at_level(logging.INFO):
             result = engine.compress(list(view), current_tokens=count_messages_tokens(view))

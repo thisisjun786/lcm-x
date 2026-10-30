@@ -5,6 +5,7 @@ FTS statements use exactly the reconcile harness exclusion. Store observers
 call the real method once; failures are injected only at the SQLite boundary.
 """
 from __future__ import annotations
+from tests.messages_snapshot import messages_snapshot_columns
 
 import argparse
 import ast
@@ -53,8 +54,11 @@ GOLDEN = ROOT / "tests" / "fixtures" / "ingest_trace.json"
 TRACE_GUIDANCE = "Regenerate deliberately: python -m tests.behaviour.ingest_trace_harness --repo . --regenerate"
 # FROZEN inventory, never generated from _ingest_messages at observation time.
 OBSERVED_ATTRIBUTES = frozenset({
+    "_no_progress_replay", "_no_progress_public_rows", "_no_progress_metadata_warned", "_no_progress_hold_persisted",
+    "_no_progress_ingest_generation", "_no_progress_observed_tokens", "_ingest_replay_redaction_changes",
     "_session_id", "_session_ignored", "_session_stateless", "_session_platform", "_conversation_id",
     "_ingest_cursor", "_ingest_cursor_needs_reconcile", "_last_compacted_store_id",
+    "_ingest_replay_redaction_changes",
     "_compress_commit_proof", "_last_emission_descriptors", "_compress_occurrences", "_compress_run",
     "_config", "_hermes_home", "_store", "_dag", "_lifecycle", "_host_rewrite_store",
     "_host_rewrite_overrides", "_host_rewrite_watch", "_last_active_replay_messages",
@@ -65,7 +69,8 @@ OBSERVED_ATTRIBUTES = frozenset({
     "_generated_ignored_active_replay_placeholder_message_ids", "_generated_ignored_active_replay_placeholder_hashes",
     "_generated_ignored_active_replay_placeholder_hash_counts", "_generated_ignored_active_replay_placeholder_hash_ordinals",
     "_session_end_flush_active", "_pending_session_tails", "_out_of_band_durable_rows", "_foreground_budget",
-    "_consecutive_ingest_failures", "_pruned_tool_source_generation", "_pruned_tool_source_identities",
+    "_consecutive_ingest_failures", "_ingest_failure_count", "_last_ingest_error", "_last_ingest_error_time",
+    "_pruned_tool_source_generation", "_pruned_tool_source_identities",
     "_pruned_tool_source_store", "_LCM_SUMMARY_PART_HEADER_RE", "context_length",
     "_current_compress_placeholder_identity_counts", "_emitted_carriers_retired", "_emitted_carriers_seen",
     "_foreground_rebind_parent_session_id", "_foreground_rebind_previous_conversation_id",
@@ -119,6 +124,7 @@ SCENARIOS = (
       for v in ("probe", "append", "locked", "duplicate-tail", "metadata", "relation", "prematch", "durable")],
     *[Scenario(f"anchor-{v}", "P4/F1/W1", variant=v, warm=True)
       for v in ("disabled", "stamp-replay", "stamp-new-uid", "remainder", "version")],
+    Scenario("anchor-version-ignore", "P4/F1/W1", variant="version-ignore", warm=True, stored=0),
     Scenario("reconcile-tool-after-new", "P3/F1", shape="tools", variant="tool-after-new"),
     Scenario("repeated-tool-id", "P3/F1/W1", shape="tools", variant="repeated-id"),
     Scenario("repeated-equal-occurrences", "Sequence", variant="equal", stored=0),
@@ -142,6 +148,18 @@ SCENARIOS = (
     Scenario("uid-bindings-new", "W1", shape="uid", stored=0),
     Scenario("uid-bindings-replay", "P1/W1", shape="uid", warm=True),
     Scenario("uid-bindings-new-occurrence", "P1/W1", shape="uid", warm=True, variant="new-stamp"),
+    Scenario("row-filter-ignored-append-error", "F1/W1", shape="ignored", variant="changed", fault="append"),
+    Scenario("row-filter-generated-append-error", "F1/W1", shape="quarantine", variant="generated-append", fault="append"),
+    Scenario("row-filter-ignore-ledger-lock", "F1/W1", shape="ignored-ledger",
+             variant="ignore-ledger", fault="locked", stored=0),
+    Scenario("replay-build-mapped-ignore", "P2", shape="ignored", variant="mapped-only"),
+    Scenario("replay-build-quarantine-prefix", "P2", shape="quarantine-prefix", warm=True),
+    Scenario("protect-after-filter-copy", "W0/F1", shape="ignored-ledger", variant="protect-ledger", fault="locked", stored=0),
+    Scenario("protect-path-error", "W0", shape="protect-error", variant="single", fault="protect-path", stored=0),
+    Scenario("sqlite-locked-existing-tail", "W1", variant="delta", fault="locked", stored=4),
+    Scenario("sqlite-duplicate-existing-tail", "W1", variant="delta", fault="duplicate-tail", stored=4),
+    Scenario("protect-large-assistant", "W0", shape="raw-large", variant="assistant", stored=0),
+    Scenario("protect-large-user", "W0", shape="raw-large", variant="user", stored=0),
 )
 
 
@@ -243,6 +261,7 @@ class IngestCanonical(Canonical):
         super().__init__(root, messages)
         self.path_hashes: dict[str, str] = {}
         self.uid_cache_digests: dict[bytes, str] = {}
+        self.replay_digests: dict[str, str] = {}
         # Labels outlive individual snapshots. Keep their objects alive too, so
         # a later placeholder cannot inherit a freed object's address/label.
         self.retained_messages = {id(row): row for row in messages}
@@ -267,15 +286,36 @@ class IngestCanonical(Canonical):
                 label = self.uid_cache_digests.setdefault(digest, f"digest-{len(self.uid_cache_digests)}")
                 entries.append([stamp, label, self.value(item)])
             return entries
+        if path == "_no_progress_replay" and isinstance(value, tuple) and len(value) == 3:
+            # The digest includes sandbox paths/file generations. Preserve its
+            # equality and every transition; replay bytes are observed separately.
+            session, conversation, digest = value
+            label = self.replay_digests.setdefault(digest, f"<replay-digest-{len(self.replay_digests)}>")
+            return [session, conversation, label]
+        if path == "_no_progress_public_rows" and isinstance(value, dict):
+            # Error fixtures can replace the active rows while this copy cache
+            # still owns the previous occurrence addresses. Never emit addresses.
+            return {self.identities.get(key, f"cached-occurrence-{index}"): self.value(row)
+                    for index, (key, row) in enumerate(value.items())}
         if (in_payload or path in {"content", "payload"}) and isinstance(value, dict):
             return {k: self.value(v, str(k), in_payload=True) for k, v in value.items()}
         if callable(value):
             return {"callable": True}
         if isinstance(value, bytes):
             return {"bytes": value.hex()}
-        if path == "_pending_session_tails" and isinstance(value, list):
-            value = [{**item, "store": "<owning-store>"} for item in value]
         return super().value(value, path, in_payload=in_payload)
+
+
+def retain_replay_copy_owners(patch: pytest.MonkeyPatch, owners: dict[int, Message]) -> None:
+    """Observe copy return before any caller can replace/free those address owners."""
+    original = engine_module.LCMEngine._copy_active_replay_messages_preserving_generated_ids
+
+    def copied(engine: Any, rows: list[Message]) -> list[Message]:
+        result = original(engine, rows)
+        owners.update((id(row), row) for row in result)
+        return result
+
+    patch.setattr(engine_module.LCMEngine, "_copy_active_replay_messages_preserving_generated_ids", copied)
 
 
 def recovery_receipts(engine: Any, value: Any) -> Any:
@@ -311,18 +351,26 @@ def snapshot(engine: Any, canonical: IngestCanonical) -> dict[str, Any]:
         if name in {"_store", "_host_rewrite_store"}:
             value = {"present": value is not None}
         elif name == "_dag":
-            value = engine._dag.get_session_nodes("S", limit=10000)
+            value = {session: engine._dag.get_session_nodes(session, limit=10000)
+                     for session in sorted({"S", engine._session_id} - {""})}
         elif name == "_lifecycle":
             value = engine._lifecycle.get_by_conversation("trace-conversation")
         elif name in {"_identity_anchor_recoveries", "_identity_anchor_recovery"}:
             value = recovery_receipts(engine, value)
+        elif name == "_pending_session_tails":
+            value = [{**tail, "store": (
+                "<absent-store>" if "store" not in tail else
+                None if tail["store"] is None else
+                "<owning-store>" if tail["store"] is engine._store else "<other-store>"
+            )} for tail in value]
         state[name] = canonical.value(value, name)
     conn = engine._store._conn
     # Exact durable rows, including relation IDs, observed_at/source, UID bindings,
     # scaffold/carry/proof metadata. Searchability is observed via the store API,
     # separately from this snapshot; SQLite FTS internals stay excluded.
     tables = [r[0] for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name")]
-    state["tables"] = {name: canonical.value([tuple(row) for row in conn.execute(f'SELECT * FROM "{name}" ORDER BY 1')])
+    state["tables"] = {name: canonical.value([tuple(row) for row in conn.execute(
+                           f'SELECT {messages_snapshot_columns(conn) if name == "messages" else "*"} FROM "{name}" ORDER BY 1')])
                        for name in tables if not name.startswith(("messages_fts", "sqlite_"))}
     return state
 
@@ -408,7 +456,10 @@ def prepare(engine: Any, case: Scenario, root: Path, engines: ExitStack) -> tupl
     if case.shape == "sequence":
         original = [{"role": "user" if i % 2 == 0 else "assistant", "content": f"turn {i}: " + "alpha beta " * 50,
                      "timestamp": 100. + i, "message_uid": f"host-{i}"} for i in range(24)]
-    elif case.shape == "raw-stub":
+    elif case.shape == "quarantine-prefix":
+        original = [{"role": "assistant", "content": text * 3000}
+                    for text in ("first repeated segment. ", "second repeated segment. ")]
+    elif case.shape in {"raw-stub", "raw-large"}:
         original = []
     elif case.shape == "tools-many":
         original = [{"role": "system", "content": "system"}, {"role": "user", "content": "u1"}]
@@ -420,8 +471,10 @@ def prepare(engine: Any, case: Scenario, root: Path, engines: ExitStack) -> tupl
             pair[1]["content"] = f"output-{index} " * 50
             original.extend(pair)
         original.append({"role": "assistant", "content": "a1"})
-    if case.variant in {"remainder", "version"} or case.fault == "relation":
+    if case.variant in {"remainder", "version", "version-ignore"} or case.fault == "relation":
         original += [{"role": "user", "content": "held head\n\n  exact whitespace \t", "timestamp": 500.}]
+    if case.variant == "version-ignore":
+        original[-1].pop("timestamp")
     incoming = [dict(m) for m in original] or [{"role": "user", "content": "fresh"}]
     if case.warm or case.variant == "warm" or case.proof in {"output", "native", "consumed"}:
         engine._ingest_messages(original)
@@ -503,11 +556,13 @@ def prepare(engine: Any, case: Scenario, root: Path, engines: ExitStack) -> tupl
     elif case.shape == "tools-many":
         incoming = incoming[2:4] + [{"role": "assistant", "content": "new row"}] + incoming[4:-1]
         incoming.append({"role": "user", "content": "u2"})
+    elif case.shape == "raw-large":
+        incoming = [{"role": case.variant, "content": " ".join(f"word{index:05d}" for index in range(11000))}]
     elif case.shape == "raw-stub":
         incoming = [{"role": case.variant, "content": (
             f"[Externalized payload: kind=raw_payload; role={case.variant}; chars=100; bytes=100; ref=synthetic.json]")}
             for _ in range(case.stored)]
-    elif case.shape == "tool-stub":
+    elif case.shape in {"tool-stub", "protect-error"}:
         incoming = [{"role": "tool", "tool_call_id": "call-1", "content": "durable output words " * 100}]
         if case.variant in {"pair", "host-held"}:
             incoming += [{"role": "tool", "tool_call_id": "call-2", "content": "another output " * 100}]
@@ -519,6 +574,26 @@ def prepare(engine: Any, case: Scenario, root: Path, engines: ExitStack) -> tupl
             if case.variant == "host-held":
                 incoming = [dict(m) for m in active]
             incoming.append({"role": "user", "content": "next"})
+    elif case.shape == "quarantine-prefix":
+        # A missing old payload must not be recreated before the warm cursor;
+        # the other old payload is reused while a fresh tail is externalized.
+        first = engine._store.get_session_messages("S")[0]
+        refs = engine_module.extract_ingest_externalized_refs(first["content"])
+        assert len(refs) == 1
+        (root / "home" / "payloads" / refs[0]).unlink()
+        incoming.append({"role": "assistant", "content": "fresh repeated segment. " * 3000})
+    elif case.variant == "mapped-only":
+        incoming = [{"role": "assistant", "content": "host replacement", "store_id": 2},
+                    {"role": "user", "content": "after mapped ignore"}]
+    elif case.variant in {"ignore-ledger", "protect-ledger"}:
+        # The SQLite writer lock prevents ledger writes. The second digest
+        # displaces the first, and append failure exposes the fallback copies.
+        incoming = [{"role": "user", "content": "IGNORE THIS ROW first"},
+                    {"role": "assistant", "content": "IGNORE THIS ROW second"},
+                    {"role": "user", "content": "ordinary row after ignored messages"}]
+        if case.variant == "protect-ledger":
+            incoming += [{"role": "user", "content": "[Externalized payload: kind=raw_payload; role=user; chars=100; bytes=100; ref=synthetic.json]"},
+                         {"role": "tool", "tool_call_id": "call-1", "content": "durable output words " * 100}]
     elif case.variant == "empty":
         incoming = []
     elif case.variant in {"prefix", "suffix"}:
@@ -565,10 +640,12 @@ def prepare(engine: Any, case: Scenario, root: Path, engines: ExitStack) -> tupl
     if case.variant == "remainder" or case.fault == "relation":
         incoming[-1]["content"] += "\n\n  fresh remainder \n\ntrailing \t"
         incoming.append({"role": "assistant", "content": "reply", "timestamp": 501.})
-    elif case.variant == "version":
+    elif case.variant in {"version", "version-ignore"}:
         incoming = original  # The host mutates the same watched object.
-        incoming[-1]["content"] = "edited head with new bytes"
-        incoming.append({"role": "assistant", "content": "reply", "timestamp": 501.})
+        incoming[-1]["content"] = ("IGNORE THIS ROW edited head" if case.variant == "version-ignore"
+                                    else "edited head with new bytes")
+        if case.variant == "version":
+            incoming.append({"role": "assistant", "content": "reply", "timestamp": 501.})
     if case.fault == "metadata":
         incoming = [{"role": "user", "content": "[Current user objective preserved from compacted history]\ninspect"}]
     if case.shape == "placeholder":
@@ -614,12 +691,16 @@ def prepare(engine: Any, case: Scenario, root: Path, engines: ExitStack) -> tupl
             engine._generated_ignored_active_replay_placeholder_message_ids.add(id(incoming[0]))
     if case.shape == "uid" and not case.stored:
         incoming[0]["message_uid"] = "host-uid-new"
+    if case.variant == "generated-append":
+        incoming = [{**original[0], "timestamp": 999.}, {"role": "user", "content": "after ignored quarantine"}]
+        incoming[0]["content"] = incoming[0]["content"].replace(
+            "LCM sensitive redaction:", "LCM active replay placeholder: assistant output quarantined;")
+        digest = engine._active_replay_placeholder_digest(incoming[0]["content"])
+        assert digest
+        engine._remember_generated_ignored_placeholder_hash(digest)
+        incoming.insert(0, {"role": "user", "content": "new row before generated placeholder"})
     if case.variant == "no-session":
         engine._session_id = ""
-    elif case.variant == "ignored":
-        engine._session_ignored = True
-    elif case.variant == "stateless":
-        engine._session_stateless = True
     return engine, incoming
 
 
@@ -627,6 +708,12 @@ def prepare(engine: Any, case: Scenario, root: Path, engines: ExitStack) -> tupl
 def sqlite_fault(engine: Any, fault: str, events: Trace) -> Iterator[None]:
     """Fail real SQL, without mocking ingest phases or store implementations."""
     conn = engine._store._conn
+    if fault == "protect-path":
+        # Exercise the real containment error at payload protection, then permit retry.
+        with pytest.MonkeyPatch.context() as patch:
+            patch.setenv("LCM_HERMES_BASE_DIR", str(Path(engine._hermes_home) / "contained"))
+            yield
+        return
     if fault == "snapshot":
         conn.execute("BEGIN")
         conn.execute("SELECT COUNT(*) FROM messages").fetchone()
@@ -674,6 +761,7 @@ def sqlite_fault(engine: Any, fault: str, events: Trace) -> Iterator[None]:
 
 
 def observe(case: Scenario, root: Path, *, payloads: list[str] | None = None) -> Trace:
+    root = root.resolve()
     root.mkdir(parents=True, exist_ok=True)
     events: Trace = []
     with pytest.MonkeyPatch.context() as patch:
@@ -714,13 +802,15 @@ def observe(case: Scenario, root: Path, *, payloads: list[str] | None = None) ->
             summarizer = summarizer_factory()
             summarizer.install(patch)
             settings.update(leaf_chunk_tokens=300, fresh_tail_count=2, fresh_tail_max_tokens=1000)
-        if case.shape == "tool-stub":
+        if case.shape in {"tool-stub", "protect-error", "raw-large"} or case.variant == "protect-ledger":
             settings.update(large_output_externalization_enabled=True,
                             large_output_externalization_threshold_chars=100,
                             large_output_active_replay_stubbing_enabled=True,
                             large_output_active_replay_stub_threshold_tokens=10)
-        if case.shape == "ignored":
+        if (case.shape in {"ignored", "ignored-ledger"} or case.variant == "version-ignore"):
             settings["ignore_message_patterns"] = ["IGNORE THIS ROW"]
+        if case.variant in {"ignored", "stateless"}:
+            settings["ignore_session_patterns" if case.variant == "ignored" else "stateless_session_patterns"] = ["S"]
         if case.shape == "uid":
             (root / "home").mkdir(exist_ok=True)
             with sqlite3.connect(root / "home" / "state.db") as host:
@@ -728,12 +818,15 @@ def observe(case: Scenario, root: Path, *, payloads: list[str] | None = None) ->
                              "end_reason TEXT, source TEXT, model_config TEXT)")
                 host.execute("INSERT INTO sessions VALUES ('S', NULL, NULL, 'cli', NULL)")
         with context(root, window=200000, conversation_id="trace-conversation", **settings) as engine, ExitStack() as engines:
-            if case.shape == "ignored":
+            copy_owners: dict[int, Message] = {}
+            retain_replay_copy_owners(patch, copy_owners)
+            if (case.shape in {"ignored", "ignored-ledger"} or case.variant == "version-ignore"):
                 engine._compiled_ignore_message_patterns = [LiteralPattern()]
             engine, incoming = prepare(engine, case, root, engines)
-            if case.shape == "ignored":
+            if (case.shape in {"ignored", "ignored-ledger"} or case.variant == "version-ignore"):
                 engine._compiled_ignore_message_patterns = [LiteralPattern()]
             canonical = IngestCanonical(root, incoming)
+            canonical.retained_messages.update(copy_owners)
             if case.shape == "uid":
                 state_path = str(Path(engine._state_db_path()).resolve())
                 tag = hashlib.sha256(state_path.encode()).hexdigest()[:16]
@@ -762,18 +855,12 @@ def observe(case: Scenario, root: Path, *, payloads: list[str] | None = None) ->
             emit("aliases-before", aliases(incoming, incoming))
             before = snapshot(engine, canonical)
             emit("state-before", before)
-            connections: list[tuple[str, sqlite3.Connection]] = []
-            for name in ("_store", "_dag", "_lifecycle", "_host_rewrite_store"):
-                conn = getattr(getattr(engine, name, None), "_conn", None)
-                if isinstance(conn, sqlite3.Connection) and all(conn is not c for _, c in connections):
-                    connections.append((name, conn))
-
             def sql_trace(name: str, sql: str) -> None:
                 if sql.lstrip().startswith("--") or re.search(r"(['\"])(main|temp)\1\s*\.", sql):
                     return
                 emit("sql " + name, canonical.text(sql))
 
-            def wrap(name: str, original: Callable[..., Any]) -> Callable[..., Any]:
+            def wrap(name: str, original: Callable[..., Any], inject_faults: bool) -> Callable[..., Any]:
                 def observed(*args: Any, **kwargs: Any) -> Any:
                     # Callback identity is a stable label; invocation stays inside
                     # the real store transaction and remains visible through SQL.
@@ -794,8 +881,9 @@ def observe(case: Scenario, root: Path, *, payloads: list[str] | None = None) ->
                             emit("metadata-callback result", result)
                             return result
                         kwargs = {**kwargs, "metadata_factory": metadata}
-                    scoped_failure = ((case.fault == "probe" and name == "has_session_messages")
-                                      or (case.fault == "prematch" and name == "find_rows_by_observed_at"))
+                    scoped_failure = inject_faults and (
+                        (case.fault == "probe" and name == "has_session_messages")
+                        or (case.fault == "prematch" and name == "find_rows_by_observed_at"))
                     if scoped_failure:
                         engine._store._conn.set_authorizer(lambda action, table, *_:
                             sqlite3.SQLITE_DENY if action == sqlite3.SQLITE_READ and table == "messages"
@@ -812,42 +900,53 @@ def observe(case: Scenario, root: Path, *, payloads: list[str] | None = None) ->
                     return result
                 return observed
 
-            log = logging.getLogger("hermes_lcm")
-            handler, old_level = Logs(events, canonical), log.level
-            log.addHandler(handler)
-            log.setLevel(logging.DEBUG)
-            with pytest.MonkeyPatch.context() as observers:
-                for name in ("append_batch", "_append_protected_batch", "has_session_messages", "get_session_count",
-                             "get_session_messages", "get_session_messages_after", "get_session_tail",
-                             "get_session_rows_through", "get_range", "get_batch", "get_message_relations", "get",
-                             "read_metadata_json", "read_metadata_json_many", "update_metadata_json", "write_metadata_json",
-                             "backfill_observed_at_many", "add_message_relations", "add_host_uid_bindings",
-                             "host_uid_bindings_for", "find_rows_by_observed_at", "find_session_rows_by_content",
-                             "load_session_page"):
-                    if hasattr(engine._store, name):
-                        observers.setattr(engine._store, name, wrap(name, getattr(engine._store, name)))
-                for name, conn in connections:
-                    conn.set_trace_callback(partial(sql_trace, name))
-                    if isinstance(conn, TraceConnection):
-                        conn.failure_observer = lambda sql, parameters, exc, name=name: emit(
-                            "sql failed " + name, [sql, parameters, type(exc).__name__, str(exc)])
-                try:
-                    with sqlite_fault(engine, case.fault, events):
-                        for attempt in range(2 if case.fault == "duplicate-tail" else 1):
-                            try:
-                                result = engine._ingest_messages(incoming,
-                                    allow_session_end_replay_proof=case.variant == "allow-end")
-                                emit(f"return-{attempt}", result)
-                                emit(f"aliases-{attempt}", aliases(incoming, result))
-                            except Exception as exc:
-                                emit(f"raise-{attempt}", [type(exc).__name__, str(exc)])
-                finally:
-                    for _, conn in connections:
-                        conn.set_trace_callback(None)
+            @contextmanager
+            def observing(*, inject_faults: bool = False) -> Iterator[None]:
+                # Resolve connections anew for each engine, including cold
+                # reopen. Snapshots and lifecycle setup stay outside tracing.
+                connections: list[tuple[str, sqlite3.Connection]] = []
+                for name in ("_store", "_dag", "_lifecycle", "_host_rewrite_store"):
+                    conn = getattr(getattr(engine, name, None), "_conn", None)
+                    if isinstance(conn, sqlite3.Connection) and all(conn is not c for _, c in connections):
+                        connections.append((name, conn))
+                log = logging.getLogger("hermes_lcm")
+                handler, old_level = Logs(events, canonical), log.level
+                log.addHandler(handler)
+                log.setLevel(logging.DEBUG)
+                with pytest.MonkeyPatch.context() as observers:
+                    for name in ("append_batch", "_append_protected_batch", "has_session_messages", "get_session_count",
+                                 "get_session_messages", "get_session_messages_after", "get_session_tail",
+                                 "get_session_rows_through", "get_range", "get_batch", "get_message_relations", "get",
+                                 "read_metadata_json", "read_metadata_json_many", "update_metadata_json", "write_metadata_json",
+                                 "backfill_observed_at_many", "add_message_relations", "add_host_uid_bindings",
+                                 "host_uid_bindings_for", "find_rows_by_observed_at", "find_session_rows_by_content",
+                                 "load_session_page"):
+                        if hasattr(engine._store, name):
+                            observers.setattr(engine._store, name, wrap(name, getattr(engine._store, name), inject_faults))
+                    for name, conn in connections:
+                        conn.set_trace_callback(partial(sql_trace, name))
                         if isinstance(conn, TraceConnection):
-                            conn.failure_observer = None
-                    log.removeHandler(handler)
-                    log.setLevel(old_level)
+                            conn.failure_observer = lambda sql, parameters, exc, name=name: emit(
+                                "sql failed " + name, [sql, parameters, type(exc).__name__, str(exc)])
+                    try:
+                        yield
+                    finally:
+                        for _, conn in connections:
+                            conn.set_trace_callback(None)
+                            if isinstance(conn, TraceConnection):
+                                conn.failure_observer = None
+                        log.removeHandler(handler)
+                        log.setLevel(old_level)
+
+            with observing(inject_faults=True), sqlite_fault(engine, case.fault, events):
+                for attempt in range(2 if case.fault == "duplicate-tail" else 1):
+                    try:
+                        result = engine._ingest_messages(incoming,
+                            allow_session_end_replay_proof=case.variant == "allow-end")
+                        emit(f"return-{attempt}", result)
+                        emit(f"aliases-{attempt}", aliases(incoming, result))
+                    except Exception as exc:
+                        emit(f"raise-{attempt}", [type(exc).__name__, str(exc)])
             after = snapshot(engine, canonical)
             for name, value in after.items():
                 if before.get(name) != value:
@@ -857,25 +956,31 @@ def observe(case: Scenario, root: Path, *, payloads: list[str] | None = None) ->
             manifest = payload_observation(engine)
             if manifest:
                 emit("payloads-after", manifest)
+            if case.shape == "quarantine-prefix":
+                emit("quarantine-payloads-after", [
+                    [path.name, hashlib.sha256(path.read_bytes()).hexdigest()]
+                    for path in sorted((root / "home" / "payloads").glob("*.json"))])
             emit("input-after", incoming)
             emit("aliases-after", aliases(incoming, incoming))
             # Deferred effects are checked by another real ingest and a cold
             # lifecycle rebind, including a replay after the reopened cursor.
             engine._session_end_flush_active = False
-            try:
-                result = engine._ingest_messages(incoming)
-                emit("next-return", result)
-                emit("next-aliases", aliases(incoming, result))
-            except Exception as exc:
-                emit("next-raise", [type(exc).__name__, str(exc)])
+            with observing():
+                try:
+                    result = engine._ingest_messages(incoming)
+                    emit("next-return", result)
+                    emit("next-aliases", aliases(incoming, result))
+                except Exception as exc:
+                    emit("next-raise", [type(exc).__name__, str(exc)])
             emit("next-state", snapshot(engine, canonical))
             engine = reopen(engine, root, engines)
-            if case.shape == "ignored":
+            if (case.shape in {"ignored", "ignored-ledger"} or case.variant == "version-ignore"):
                 engine._compiled_ignore_message_patterns = [LiteralPattern()]
-            try:
-                emit("cold-return", engine._ingest_messages(incoming))
-            except Exception as exc:
-                emit("cold-raise", [type(exc).__name__, str(exc)])
+            with observing():
+                try:
+                    emit("cold-return", engine._ingest_messages(incoming))
+                except Exception as exc:
+                    emit("cold-raise", [type(exc).__name__, str(exc)])
             emit("cold-state", snapshot(engine, canonical))
             manifest = payload_observation(engine)
             if manifest:

@@ -31,7 +31,8 @@ arguments documented below.
 Runtime discovery exposes 13 schemas by default. `lcm_query_state` appears
 only with `LCM_ASSERTIONS_ENABLED=true`; `lcm_retrieve` appears only with
 `LCM_ADAPTIVE_RETRIEVAL_ENABLED=true`. `LCM_DISABLED_TOOLS` hides any named
-tool, even when its flag is enabled. The manifest retains all 15 declarations.
+tool, even when its flag is enabled. The manifest retains all 16 declarations.
+`LCM_ENTITIES_ENABLED=1` exposes `lcm_memory`; it adds no default recall or context content.
 
 | Tool | Use |
 |------|-----|
@@ -50,6 +51,7 @@ tool, even when its flag is enabled. The manifest retains all 15 declarations.
 | `lcm_status` | Show runtime health, context pressure, config, source lineage, and lifecycle stats. |
 | `lcm_inspect` | Read-only operator inventory for current-session lineage, message/frontier metadata, fresh tail, externalized refs/readability, compaction skip/no-op reasons, and matched ignore/stateless patterns. It returns metadata only; use `lcm_load_session`/`lcm_expand` when you need content. |
 | `lcm_doctor` | Run database, FTS, lifecycle, config, and context-pressure diagnostics. |
+| `lcm_memory` | Default-off read-only `lookup`/`list` over this profile. Lookup accepts a name and up to 8 aliases; returns mention counts, event/write-labelled first/last times (carried times marked `time_uncertain: carried`) and sessions over all matching rows, plus capped cited snippets and compatible assertion facts. Optional question ranks up to 5 mentions across all entity matches, independently of the card limit. List groups assertion subjects by namespace; without assertions there is no registry until E2. No writes or model calls. |
 
 ### Retrieval contract
 
@@ -188,6 +190,31 @@ usable result before the deadline, the semantic arm is not started and an
 explicit timeout is returned. Fusion expiry also returns an explicit timeout.
 No external reranker is called.
 
+### Exact duplicate message delivery (`lcm_recall` / `lcm_grep`)
+
+Exact stored copies of a message count once against delivery limits, per-session
+quotas, expansion quotas and response budgets. The key is the session and
+conversation identity, source, role, tool-call id (empty when absent), assistant
+tool calls, and SHA-256 of the
+**full stored content**. Summaries are never grouped; chunks of the same message
+still fuse by `store_id` first.
+Only stamped rows with the same recorded occurrence time can collapse. Unstamped
+rows remain separate, including a stamped original's unstamped replay copies:
+content equality alone cannot distinguish a copy from a real repeated turn.
+Groups with multiple recorded occurrence times remain separate in full.
+
+The representative is the best-ranked member. The group keeps its best-ranked position. Recall keeps the
+maximum fused score and union of retrieval arms. Only grouped hits carry
+`duplicate_store_ids`: sorted other store ids, excluding the representative.
+For example, `{"store_id": 12, "duplicate_store_ids": [19, 27]}` identifies
+three stored copies through one delivered hit. This is on by default with no
+config key. Duplicate-free responses retain their existing bytes.
+
+Grouping affects delivery only: raw reads and `lcm_expand(store_id=...)` still
+return each row independently. It neither changes the store nor repairs the
+writers that produced duplicates. A failed or expired identity read leaves
+recall candidates ungrouped rather than hiding potentially distinct evidence.
+
 ### Weighted RRF fusion (lcm_recall)
 
 `lcm_recall` fuses three arms — full-text raw messages, summary-vector KNN, and
@@ -217,6 +244,25 @@ erroring the tool. `lcm_grep`'s hybrid RRF is unaffected: it keeps implicit
 `1.0` weights (byte-identical to the unweighted formula above). The weights
 actually applied to the arms that ran are echoed back under
 `provenance.arm_weights`.
+
+#### Opt-in session packs (`LCM_RECALL_DELIVERY_UNIT`)
+
+The default `hits` preserves the ranked-hit response. Set
+`LCM_RECALL_DELIVERY_UNIT=session` to deliver full source messages around the
+best-ranked seeds, with unchanged ranking. Invalid environment values warn and
+fall back to `hits`. `limit` bounds ranked seeds (maximum 25), so `total_results`
+can exceed it. `include` selects seed arms; summary seeds can return raw messages.
+Both `detail` values use session delivery; `seen_refs` and occurrence-time
+options retain their `answer_ready` validation and exact-span semantics.
+
+The whole JSON response fits 16,000 estimated tokens and 64,000 characters,
+including metadata and escaping. It can contain partial sessions; inspect
+`provenance.delivery` for seed IDs, source-order ranges, completion, omissions,
+estimator and measured size. Tool-call/result groups are atomic. Oversized or
+unreadable groups carry bounded expansion hints; stored content is never changed.
+Event time comes from host observation, never the storage timestamp. Externalized
+markers remain markers. Proactive injection keeps its independent hits budget.
+This setting makes no answer-quality or host-context-fit guarantee.
 
 #### FTS anchor slot (`LCM_RECALL_FTS_ANCHOR`)
 
@@ -267,6 +313,16 @@ see [vector storage scale options](operator-guide.md#vector-storage-scale-option
 the caveat — the same disclosure mechanism as `lcm_grep`'s `degraded_reason` —
 so a caller never mistakes a truncated or approximate arm's contribution to the
 fused ranking for an exhaustive exact one.
+
+A backlog recorded by the last embedding backfill pass also sets `degraded: true`
+with a `summary semantic index catching up` or `chunk semantic index catching up`
+reason (and remaining rows when known). The record is per corpus and embedding
+identity; completing catch-up clears it. Non-FastEmbed uncertain rows instead report
+`<corpus> semantic index has N rows awaiting /lcm embed backfill --apply --retry-uncertain --corpus <summary|chunks>`.
+Ingest marks an existing chunk record when automatic chunk passes cannot run;
+a manual backfill clears it. Ordinary automatic ingest lag and no recorded pass
+add no reason. Recall uses a keyed metadata
+lookup, without counting corpus rows; coverage enums still describe the kNN scan.
 
 ### Privacy-policy errors are not a degrade
 

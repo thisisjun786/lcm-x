@@ -143,6 +143,8 @@ def doctor_engine(
     tmp_path: Path, case: str, patch: pytest.MonkeyPatch, *, trace: bool = False
 ) -> Iterator[Any]:
     # No session bind: no background work, host calls, or provider loads.
+    patch.setenv("HERMES_HOME", str(tmp_path / "home"))
+    patch.setenv("HERMES_PROFILE", "default")
     engine: Any = make_engine(
         tmp_path, embeddings_enabled=False, ignore_session_patterns=["noise-*"]
     )
@@ -278,6 +280,12 @@ def doctor_engine(
                 "_embedding_provider_health_check",
                 _raise if case == "embedding_raise" else lambda engine: health,
             )
+        from hermes_lcm import diagnostics
+        def connect(*args, **kwargs):
+            fresh = sqlite3.connect(*args, **kwargs, factory=FaultConnection)
+            fresh.fault = lambda q, p: engine._store.connection.fault(q, p)
+            return fresh
+        patch.setattr(diagnostics, "connect", connect)
         yield engine
         if case in {
             "schema_error",
@@ -495,3 +503,251 @@ def test_doctor_read_order(
                     "host_uid_doctor_lines",
                 )
             )
+
+
+@pytest.mark.parametrize("owner_name,helper,expected", (
+    ("command", "load_integrity_failed", "issues: none"),
+    ("command", "check_external_content_fts_integrity", "issues: messages_fts, nodes_fts"),
+    ("store", "read_metadata_json", "survival_fit_count: 0"),
+    ("store", "get_source_stats", "issues: source_lineage"),
+    ("lifecycle", "get_fragmentation_stats", "issues: lifecycle_fragmentation"),
+    ("command", "externalized_payload_stats", "issues: payload_storage"),
+    ("command", "scan_externalized_payload_integrity", "issues: payload_storage"),
+))
+def test_doctor_helper_exceptions(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    owner_name: str, helper: str, expected: str,
+) -> None:
+    with doctor_engine(tmp_path, "healthy", monkeypatch) as engine:
+        owner = {"command": command, "store": engine._store,
+                 "lifecycle": engine._lifecycle}[owner_name]
+        calls = []
+
+        def fail(*args: Any, **kwargs: Any) -> Any:
+            calls.append(helper)
+            return _raise()
+
+        monkeypatch.setattr(owner, helper, fail)
+        text = command._doctor_text(engine)
+        assert expected in text.splitlines()
+        assert len(calls) == (2 if helper in {
+            "load_integrity_failed", "check_external_content_fts_integrity", "read_metadata_json"
+        } else 1)
+
+
+def test_doctor_compound_exception_issue_order(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    with doctor_engine(tmp_path, "healthy", monkeypatch) as engine:
+        engine._store.connection.fault = lambda q, p: q in {
+            "PRAGMA integrity_check", "PRAGMA mmap_size", "PRAGMA journal_mode",
+            "PRAGMA quick_check", "SELECT COUNT(*) FROM messages",
+            "SELECT COUNT(DISTINCT session_id) FROM messages",
+        }
+        engine._dag.connection.fault = lambda q, p: q in {
+            "SELECT COUNT(*) FROM summary_nodes",
+            "SELECT COUNT(DISTINCT session_id) FROM summary_nodes",
+        }
+        engine._lifecycle.connection.fault = lambda q, p: (
+            "SELECT conversation_id, debt_kind, debt_size_estimate" in q
+        )
+        for helper in ("scan_sqlite_payload_risks", "check_external_content_fts_integrity"):
+            monkeypatch.setattr(command, helper, _raise)
+        monkeypatch.setattr(engine._store, "get_source_stats", _raise)
+        monkeypatch.setattr(engine._lifecycle, "get_fragmentation_stats", _raise)
+        monkeypatch.setattr(tools, "_embedding_provider_health_check", _raise)
+        text = command._doctor_text(engine)
+        assert next(line for line in text.splitlines() if line.startswith("issues:")) == (
+            "issues: sqlite_integrity, messages_fts, nodes_fts, sqlite_mmap_size, "
+            "messages_total, message_sessions_total, summary_nodes_total, "
+            "summary_node_sessions_total, sqlite_journal_mode, sqlite_quick_check, "
+            "payload_storage, lifecycle_state, source_lineage, lifecycle_fragmentation, "
+            "embedding_provider_health"
+        )
+        assert text.count("payload_storage, ") == 1
+
+
+def test_doctor_missing_payload_precedes_late_failures(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    with doctor_engine(tmp_path, "missing_refs", monkeypatch) as engine:
+        monkeypatch.setattr(engine._store, "get_source_stats", _raise)
+        monkeypatch.setattr(engine._lifecycle, "get_fragmentation_stats", _raise)
+        text = command._doctor_text(engine)
+        assert "issues: payload_storage, source_lineage, lifecycle_fragmentation" in text.splitlines()
+
+
+@pytest.mark.parametrize("case", ("healthy", "payload_error", "fit_projection", "embedding_raise"))
+def test_doctor_render_is_detached(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, case: str,
+) -> None:
+    from hermes_lcm.command_doctor import collect_doctor, render_doctor
+
+    with doctor_engine(tmp_path, case, monkeypatch) as engine:
+        facts = collect_doctor(engine)
+        expected = render_doctor(facts)
+        for owner in (engine._store, engine._dag, engine._lifecycle):
+            owner.connection.fault = lambda q, p: True
+        for name in (
+            "inspect_lcm_schema_health", "sensitive_pattern_status", "sqlite_wal_reset_affected",
+            "stem_index_status", "host_uid_doctor_lines", "doctor_guidance_for_checks",
+            "doctor_guidance_for_check", "survival_fit_count", "survival_fit_projection_floor_applies",
+        ):
+            monkeypatch.setattr(command, name, _raise)
+        monkeypatch.setattr(tools, "_embedding_provider_health_check", _raise)
+        monkeypatch.setattr(Path, "exists", _raise)
+        monkeypatch.setattr(Path, "stat", _raise)
+        assert render_doctor(facts) == expected
+        assert render_doctor(facts) == expected
+        # Restore pathlib before the engine's fixture teardown.
+        monkeypatch.undo()
+
+
+def test_doctor_render_keeps_duplicate_payload_issue_positions(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from dataclasses import replace
+    from hermes_lcm.command_doctor import collect_doctor, render_doctor
+
+    with doctor_engine(tmp_path, "missing_refs", monkeypatch) as engine:
+        facts = collect_doctor(engine)
+        # The collector's fallback cannot produce this combination today. Replay
+        # both issue sites independently so rendering never deduplicates them.
+        facts = replace(facts, probe_errors={"payload_storage": True, "lifecycle_state": True})
+        text = render_doctor(facts)
+        assert "issues: payload_storage, lifecycle_state, payload_storage" in text.splitlines()
+
+
+@pytest.mark.parametrize("scenario", ("stale", "corrupt", "fallback"))
+def test_doctor_fresh_integrity(tmp_path, monkeypatch, scenario):
+    from hermes_lcm import diagnostics
+    from hermes_lcm.dag import SummaryNode
+    from tests.harness.engine import engine_context
+
+    with engine_context(tmp_path, embeddings_enabled=False) as engine:
+        store, dag = engine._store.connection, engine._dag.connection
+        for i in range(24):
+            engine._dag.add_node(SummaryNode(session_id="S", summary=f"Synthetic token{i}", created_at=1))
+            if i == 11:
+                assert store.execute("PRAGMA integrity_check").fetchone()[0] == "ok"
+        stale = store.execute("PRAGMA integrity_check").fetchone()[0]
+        quick = store.execute("PRAGMA quick_check").fetchone()[0]
+        print(f"stale={stale}; quick_check={quick}")
+        assert "fts5:" in stale
+        if scenario == "corrupt":
+            dag.execute("DELETE FROM nodes_fts_data WHERE id=(SELECT min(id) FROM nodes_fts_data WHERE id>10)")
+            dag.commit()
+        if scenario == "fallback":
+            monkeypatch.setattr(diagnostics, "connect", _raise, raising=False)
+        payload = json.loads(tools.lcm_doctor({}, engine=engine))
+        check = next(c for c in payload["checks"] if c["check"] == "database_integrity")
+        text = command._doctor_text(engine)
+        detail = next(line for line in text.splitlines() if line.startswith("sqlite_integrity:"))
+        print(f"{scenario}: {check}; {detail}")
+        if scenario == "stale":
+            assert check["status"] == "pass", check
+            assert detail == "sqlite_integrity: ok", detail
+            assert "quick_check: ok" in text
+            assert next(c for c in payload["checks"] if c["check"] == "sqlite_storage")["status"] == "pass"
+        else:
+            assert check["status"] == "fail", check
+            assert detail != "sqlite_integrity: ok", detail
+            guidance = diagnostics.doctor_guidance_for_check(check)["operator_action"]
+            if scenario == "fallback":
+                assert "long-lived connection" in check["detail"] and "unconfirmed" in check["detail"]
+                assert "long-lived connection" in detail and "unconfirmed" in detail
+                assert "only if" in guidance and "fresh" in guidance
+                assert guidance in text
+            else:
+                assert "restore from backup" in guidance
+                assert guidance in text
+
+
+@pytest.mark.parametrize("damage", (b"NOT A DATABASE!!", b"\xff" * 100), ids=("header", "page1"))
+def test_doctor_fresh_corruption_error(tmp_path, damage):
+    from tests.harness.engine import engine_context
+
+    with engine_context(tmp_path, embeddings_enabled=False) as engine:
+        db = Path(engine._store.db_path)
+        tools.lcm_doctor({}, engine=engine)
+        command._doctor_text(engine)
+        engine._store.connection.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+        original = db.read_bytes()
+        try:
+            with db.open("r+b") as stream:
+                stream.seek(0 if len(damage) == 16 else 100)
+                stream.write(damage)
+            payload = json.loads(tools.lcm_doctor({}, engine=engine))
+            checks = {c["check"]: c for c in payload["checks"]}
+            text = command._doctor_text(engine)
+            for name in ("database_integrity", "sqlite_storage"):
+                assert checks[name]["status"] == "fail", checks[name]
+                assert "unconfirmed" not in str(checks[name]["detail"]), checks[name]
+                assert "restore from backup" in next(g["operator_action"] for g in payload["guidance"] if g["check"] == name)
+            assert "status: issues-found" in text
+            for prefix in ("sqlite_integrity: error:", "quick_check: error:"):
+                assert any(line.startswith(prefix) and "unconfirmed" not in line for line in text.splitlines()), text
+            assert "restore from backup" in text
+        finally:
+            db.write_bytes(original)
+
+
+def test_doctor_fallback_ok_status(tmp_path, monkeypatch):
+    from hermes_lcm import diagnostics
+    from tests.harness.engine import engine_context
+
+    with engine_context(tmp_path, embeddings_enabled=False) as engine:
+        baseline = command._doctor_text(engine).splitlines()[1]
+        assert baseline != "status: issues-found"
+        monkeypatch.setattr(diagnostics, "connect", _raise)
+        payload = json.loads(tools.lcm_doctor({}, engine=engine))
+        check = next(c for c in payload["checks"] if c["check"] == "database_integrity")
+        assert check["status"] == "pass", check
+        text = command._doctor_text(engine)
+        assert "sqlite_integrity: ok (long-lived connection; unconfirmed)" in text
+        assert text.splitlines()[1] == baseline, text
+
+
+def test_doctor_fresh_connection_read_only(tmp_path, monkeypatch):
+    from hermes_lcm import diagnostics
+    from tests.harness.engine import engine_context
+
+    refused = []
+    real_connect = diagnostics.connect
+    def probe(*args, **kwargs):
+        conn = real_connect(*args, **kwargs)
+        try:
+            conn.execute("CREATE TABLE ro_probe(x)")
+        except sqlite3.OperationalError as exc:
+            refused.append(exc.sqlite_errorname == "SQLITE_READONLY")
+        return conn
+    with engine_context(tmp_path, embeddings_enabled=False) as engine:
+        monkeypatch.setattr(diagnostics, "connect", probe)
+        assert diagnostics.fresh_sqlite_check(engine, "integrity_check") == (True, "ok")
+        assert refused == [True]
+        assert not engine._store.connection.execute("SELECT 1 FROM sqlite_master WHERE name='ro_probe'").fetchall()
+
+
+def test_compaction_progress_docs_url_uses_plugin_version():
+    from hermes_lcm.diagnostics import doctor_guidance_for_check
+    from hermes_lcm.runtime_identity import _plugin_metadata
+    result = doctor_guidance_for_check({"check": "compaction_progress", "status": "warn"})
+    assert result["operator_action"].endswith(
+        f"offline diagnosis: https://github.com/electricsheephq/lcm-x/blob/v{_plugin_metadata()['version']}/docs/operations/store-wedge-inspect.md")
+
+
+@pytest.mark.parametrize("version", ["unknown", "", "not a version"])
+def test_compaction_progress_docs_url_falls_back_to_main(monkeypatch, version):
+    from hermes_lcm import diagnostics
+    monkeypatch.setattr(diagnostics, "_plugin_metadata", lambda: {"version": version})
+    result = diagnostics.doctor_guidance_for_check({"check": "compaction_progress", "status": "warn"})
+    assert "blob/main/docs/operations/store-wedge-inspect.md" in result["operator_action"]
+
+
+@pytest.mark.parametrize("version,ref", [
+    ("1.2.3-rc.", "main"),
+    ("1.2.3-rc.1+build.5", "v1.2.3-rc.1+build.5"),
+])
+def test_plugin_docs_url_version_identifiers(version, ref):
+    from hermes_lcm.runtime_identity import plugin_docs_url
+    assert f"/blob/{ref}/docs/embeddings-setup.md" in plugin_docs_url("docs/embeddings-setup.md", version)

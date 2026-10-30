@@ -148,10 +148,10 @@ Run `actionlint` when workflows change. Record exact commands and results in the
 - Use `.agents/skills/land-pr/SKILL.md` when deciding readiness or landing a PR.
 - Pin the PR base SHA and `headRefOid`; CI and review must cover that exact head or an
   explicitly bounded delta.
-- Enforcement is strict exact-head CI (`workflow-lint`, `lint`, `test (3.11)` through
-  `test (3.14)`, and `differential` on the PR head), required review-thread resolution, and merge commits only. Keep strict
-  required-status enforcement enabled so a protected-base change blocks merging until CI passes
-  on an up-to-date head.
+- Enforcement is exact-head CI (`workflow-lint`, `lint`, `bench-tests`, `tests-ran`,
+  `test (3.11)` through `test (3.14)`, and `differential`), resolved threads, and merge commits only.
+  Strict required-status checks are off; the merge queue (`MERGE`, `ALLGREEN`) tests the merged tree.
+  Require green PR-head checks and zero unresolved threads, then enqueue the reviewed head; do not update the branch first.
 - Review obligation (`land-pr`): every PR needs at least one independent review of the exact
   head. When the `scripts/maintainer_gate.py` risk hint reports review-provenance-policy or LCM
   memory-preservation risk, it needs an acceptance review and a distinct adversarial review from
@@ -168,7 +168,7 @@ Run `actionlint` when workflows change. Record exact commands and results in the
   owner's `pull_request` bypass is for a recorded emergency only, noted on the PR.
 - Use merge commits for PRs so contributor and upstream commits remain intact. Do not squash
   or rebase-merge into `main`.
-- Merge deterministically with the pinned head:
+- Enqueue deterministically with the pinned head (a dequeue after failed merge-group CI is a stop):
 
 ```bash
 gh pr merge <PR> --merge --match-head-commit <HEAD_SHA>
@@ -197,11 +197,25 @@ gh pr merge <PR> --merge --match-head-commit <HEAD_SHA>
   both privacy postures, planted-secret battery), Phase B (multi-agent P0/P1 adversarial sweep
   of the full release diff, upgrade/migration dimension mandatory), Phase C (30+ turn live
   `hermes acp` soak), Phase D (release-over-release scorecard against the previous GA: recall
-  flips, Track S facts kept, QA rows, latency) — before the GA tag.
+  flips, Track S facts kept, QA rows, latency) — before the GA tag. From v0.31.0 the spec's
+  tiers select the rows each rc runs (the R tier plus promoted rows, the release's own gate
+  rows, and the full tier at its cadence); patch releases from v0.29.1 use the same tiers, except
+  that before v0.31.0 there is no weekly M run, so a patch's unselected rows are not run and its
+  release notes list them as not run; the minor releases v0.29.0 and v0.30.0 run all phases.
 - The GA commit may differ from the passing rc tree by EXACTLY the release-notes addition
   (mechanically verified: `git diff rcN..GA --name-only` ⊆ `.github/release-notes/`); GA notes
-  link the four phase receipts (A-D). A P0/P1 gauntlet finding means fix → new rc → re-run; the only
-  exception is a Phase B shape or a Phase C publication conflict that the previous GA also
-  shows, with the candidate no worse than the base (the spec's differential rule).
+  link the four phase receipts (A-D; under the tiers, those of the selected rows). A P0/P1 gauntlet finding means fix → new rc → re-run; the only
+  exceptions are a Phase B shape or a Phase C publication conflict that the previous GA also
+  shows, with the candidate no worse than the base; and a Phase B duplicate-only shape reachable
+  only under an injected crash or kill, meeting all five conditions in the spec's differential
+  rule: only in-flight-turn rows duplicated, each at most twice, with both counts recorded;
+  no amplification after a second crash during another in-flight turn and recovery in the same
+  session; unambiguous message
+  identity and complete tool-call/result groups, with no orphaned or doubled tool result in
+  assembled context; every base row present, in order, in its session; and verification of
+  these conditions by a reviewer from a different model than the classification's author,
+  named in the Phase B receipt. The shape is disclosed at P2 with a tracked fix planned for
+  the next patch release. If any condition fails, the normal P0/P1 rule applies and the rc
+  respins. A duplicate on any path without an injected fault still respins.
 - Agents preparing a release produce the rc tag and receipts; the GA cut itself follows the
   maintainers-own-releases rule above.

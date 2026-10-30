@@ -77,6 +77,172 @@ def recall_engine(tmp_path):
         store.close()
 
 
+@pytest.mark.parametrize("query", ["VALUE_S1586_SHARD000007_0000", "api:v2", "part-42", "alpha_beta", "3.14"])
+def test_recall_fts_arm_identifier_queries_literal_phrase_first(recall_engine, monkeypatch, query):
+    engine = recall_engine
+    target = engine._store.append("session-old", {"role": "user", "content": query})
+    for i in range(80):
+        engine._store.append(f"noise-{i}", {
+            "role": "user", "content": "VALUE S1586 unrelated SHARD000007 different 0000 api part alpha 3",
+        })
+    original = lcm_tools._lcm_grep_full_text_with_deadline
+    calls = []
+    statements = []
+    original_connect = sqlite3.connect
+
+    def connect(*args, **kwargs):
+        conn = original_connect(*args, **kwargs)
+        conn.set_trace_callback(statements.append)
+        return conn
+
+    def capture(args, **kwargs):
+        calls.append((dict(args), kwargs))
+        return original(args, **kwargs)
+
+    monkeypatch.setattr(lcm_tools, "_lcm_grep_full_text_with_deadline", capture)
+    monkeypatch.setattr(sqlite3, "connect", connect)
+    deadline = time.monotonic() + 5.0
+    hits, error = lcm_tools._lcm_recall_fts_arm(
+        engine, query, candidate_limit=10, deadline=deadline, excluded_session_ids=set(),
+    )
+    assert error is None
+    assert len(calls) == 1
+    assert calls[0][0]["query"] == f'"{query}"'
+    assert calls[0][0]["_stemmed"] is True
+    assert calls[0][0]["sort"] == "relevance"
+    assert calls[0][1]["deadline"] == deadline
+    assert [hit["store_id"] for hit in hits] == [target]
+    assert hits.fts_index == "stem"
+    from hermes_lcm.search_query import sanitize_fts5_query
+
+    phrase = sanitize_fts5_query(f'"{query}"')
+    assert any(" MATCH " in sql and phrase in sql for sql in statements)
+
+
+def test_recall_fts_arm_identifier_literal_miss_falls_back_to_or_query(recall_engine, monkeypatch):
+    engine = recall_engine
+    engine._store.append("session-old", {"role": "user", "content": "VALUE scattered S1586"})
+    deadline = time.monotonic() + 5.0
+    expected = lcm_tools._lcm_recall_fts_arm(
+        engine, "VALUE S1586", candidate_limit=10, deadline=deadline, excluded_session_ids=set(),
+    )
+    original = lcm_tools._lcm_grep_full_text_with_deadline
+    calls = []
+
+    def capture(args, **kwargs):
+        calls.append((dict(args), kwargs))
+        return original(args, **kwargs)
+
+    monkeypatch.setattr(lcm_tools, "_lcm_grep_full_text_with_deadline", capture)
+    actual = lcm_tools._lcm_recall_fts_arm(
+        engine, "VALUE_S1586", candidate_limit=10, deadline=deadline, excluded_session_ids=set(),
+    )
+    assert [args["query"] for args, _ in calls] == ['"VALUE_S1586"', "VALUE OR S1586"]
+    assert all(kwargs["deadline"] == deadline for _, kwargs in calls)
+    assert calls[-1][0]["_allow_operators"] is True
+    assert actual == expected
+    assert actual[0].fts_index == expected[0].fts_index
+
+
+@pytest.mark.parametrize("failure", [
+    {"error": "full-text query timed out", "timeout": True},
+    {"error": "full-text worker capacity exhausted"},
+    {"message_search_error": "interrupted", "results": []},
+])
+def test_recall_fts_arm_identifier_literal_timeout_skips_or_fallback(recall_engine, monkeypatch, failure):
+    calls = []
+
+    def fail(args, **kwargs):
+        calls.append(args["query"])
+        return failure
+
+    monkeypatch.setattr(lcm_tools, "_lcm_grep_full_text_with_deadline", fail)
+    hits, error = lcm_tools._lcm_recall_fts_arm(
+        recall_engine, "VALUE_S1586", candidate_limit=10,
+        deadline=time.monotonic() + 2.0, excluded_session_ids=set(),
+    )
+    assert calls == ['"VALUE_S1586"']
+    assert hits == []
+    if "error" in failure:
+        assert error is failure
+    else:
+        assert error == {"error": "full-text message search failed: interrupted"}
+
+
+@pytest.mark.parametrize("literal_hit", [True, False])
+def test_recall_fts_arm_identifier_literal_honors_exclusions(recall_engine, monkeypatch, literal_hit):
+    engine = recall_engine
+    engine._store.append("excluded", {"role": "user", "content": "VALUE_S1586"})
+    target = engine._store.append("allowed", {
+        "role": "user", "content": "VALUE_S1586" if literal_hit else "VALUE scattered S1586",
+    })
+    original = lcm_tools._lcm_grep_full_text_with_deadline
+    calls = []
+    excluded = {"excluded"}
+
+    def capture(args, **kwargs):
+        calls.append(dict(args))
+        assert args["_excluded_session_ids"] is excluded
+        return original(args, **kwargs)
+
+    monkeypatch.setattr(lcm_tools, "_lcm_grep_full_text_with_deadline", capture)
+    hits, error = lcm_tools._lcm_recall_fts_arm(
+        engine, "VALUE_S1586", candidate_limit=10,
+        deadline=time.monotonic() + 5.0, excluded_session_ids=excluded,
+    )
+    assert error is None
+    assert calls[0]["query"] == '"VALUE_S1586"'
+    assert len(calls) == (1 if literal_hit else 2)
+    assert [hit["store_id"] for hit in hits] == [target]
+    assert all(hit["session_id"] == "allowed" for hit in hits)
+
+
+@pytest.mark.parametrize(("query", "expected_query", "operators", "sort"), [
+    ("What name did we give the beagle puppy?", "name OR we OR give OR beagle OR puppy", True, "relevance"),
+    ("art-related", "art OR related", True, "relevance"),
+    ('"VALUE_S1586"', '"VALUE S1586"', True, "relevance"),
+    ("東京_42", "東京 OR 42", True, "relevance"),
+    ("🚀_42", "🚀_42", False, "relevance"),
+    ("VALUE_S1586 extra", "VALUE OR S1586 OR extra", True, "relevance"),
+    ("single42", "single42", True, "relevance"),
+    ("what did the?", "what did the?", False, "recency"),
+])
+def test_recall_fts_arm_natural_language_and_hyphenated_queries_unchanged(
+    recall_engine, monkeypatch, query, expected_query, operators, sort,
+):
+    # Golden request and complete arm payload from the pre-fix route.
+    calls = []
+    excluded = {"excluded"}
+    deadline = time.monotonic() + 5.0
+
+    def respond(args, **kwargs):
+        calls.append((args, kwargs))
+        return {"fts_index": "stem", "results": [{
+            "store_id": 7, "session_id": "old", "role": "user", "timestamp": 123,
+            "snippet": "fixed source excerpt", "source": "fixture",
+        }]}
+
+    monkeypatch.setattr(lcm_tools, "_lcm_grep_full_text_with_deadline", respond)
+    hits, error = lcm_tools._lcm_recall_fts_arm(
+        recall_engine, query, candidate_limit=10, deadline=deadline, excluded_session_ids=excluded,
+    )
+    assert error is None
+    assert calls == [({
+        "query": expected_query, "_allow_operators": operators, "_stemmed": True,
+        "sort": sort, "mode": "recall", "session_scope": "all", "limit": 10,
+        "_excluded_session_ids": excluded,
+    }, {"engine": recall_engine, "deadline": deadline, "limit_cap": lcm_tools._LCM_GREP_HYBRID_CANDIDATE_CAP})]
+    assert hits.fts_index == "stem"
+    assert hits == [{
+        "kind": "message_excerpt", "store_id": 7, "session_id": "old", "source": "fixture",
+        "role": "user", "timestamp": 123, "content_offset": 0,
+        "snippet": "fixed source excerpt", "_fts_snippet": "fixed source excerpt",
+        "from_current_session": False, "expand_hint": lcm_tools._lcm_recall_excerpt_expand_hint({
+            "session_id": "old", "store_id": 7, "content_offset": 0,
+        }),
+    }]
+
+
 def test_fulltext_recall_natural_language_question(recall_engine):
     engine = recall_engine
     engine._config.embeddings_enabled = False
@@ -2614,9 +2780,9 @@ def test_recall_event_time_cap_strip_keeps_the_read_error_reason(
     main, exact = _event_time_cap_baseline(recall_engine, monkeypatch, request)
     _fail_event_time_read(monkeypatch, "read_error")
     partial = json.loads(lcm_tools.lcm_recall(request, engine=recall_engine))
-    # Hydrated hits keep the event time they were read with; the failed read
-    # covered the rest.
-    assert any("event_time" in hit for hit in partial["hits"])
+    # The single provenance batch covers hydrated and unhydrated hits together;
+    # failed disclosure must not publish a possibly carried time as certain.
+    assert not any("event_time" in hit for hit in partial["hits"])
     assert any(
         hit["store_id"] in observed and "event_time" not in hit
         for hit in partial["hits"]
@@ -2628,8 +2794,7 @@ def test_recall_event_time_cap_strip_keeps_the_read_error_reason(
     encoded = lcm_tools.lcm_recall(request, engine=recall_engine)
     payload = json.loads(encoded)
     assert len(encoded) <= capped
-    # The cap stripped the fields the read did deliver, yet the reason stays
-    # the read failure, never ``response_cap``.
+    # The cap keeps the read failure reason, never ``response_cap``.
     assert not any("event_time" in hit for hit in payload["hits"])
     assert payload["event_time_unavailable"] is True
     assert payload["event_time_unavailable_reason"] == "read_error"
@@ -2793,6 +2958,79 @@ def test_answer_ready_centers_message_content_on_exact_chunk_span(
         "char_start": match_start,
         "char_end": match_end,
     }
+
+
+def test_answer_ready_far_apart_chunk_and_fts_keep_their_windows(
+    recall_engine, monkeypatch
+):
+    semantic = "visual workspace status panel"
+    content = ("a" * 497 + " dashboard " + "b" * 8002 + " "
+               + semantic + " " + "z" * 2000)
+    start = content.index(semantic)
+    end = start + len(semantic)
+    store_id = recall_engine._store.append(
+        "session-a", {"role": "user", "content": content}, source="chat",
+    )
+    _seed_chunk_vectors(recall_engine, [(store_id, 0, start, end, [1.0, 0.0])])
+    args = dict(query="dashboard", include="verbatim", detail="answer_ready",
+                scope_bias=0.0, limit=1)
+    fused = _recall(recall_engine, monkeypatch, **args)["hits"][0]
+    assert set(fused["arms"]) == {"fts", "chunk"}
+
+    # Controls run before the regression assertion: chunk-only keeps its span,
+    # and embeddings-off still uses B2's FTS span when there is no chunk.
+    with monkeypatch.context() as patch:
+        patch.setattr(lcm_tools, "_lcm_recall_fts_arm", lambda *a, **k: ([], None))
+        chunk_only = _recall(recall_engine, monkeypatch, **args)["hits"][0]
+    assert chunk_only["arms"] == ["chunk"]
+    assert chunk_only["evidence_span"] == {"char_start": start, "char_end": end}
+    assert semantic in chunk_only["content"]
+    recall_engine._config.embeddings_enabled = False
+    fts_only = _recall(recall_engine, monkeypatch, **args)["hits"][0]
+    assert fts_only["arms"] == ["fts"]
+    assert "chunk_span" not in fts_only
+    assert fts_only["evidence_span"] == {"char_start": 498, "char_end": 507}
+    assert fts_only["content_offset"] == 0
+
+    assert fused["chunk_span"] == chunk_only["chunk_span"]
+    assert fused["evidence_span"] == chunk_only["evidence_span"]
+    assert fused["content_offset"] == chunk_only["content_offset"]
+    assert fused["content"] == chunk_only["content"]
+
+
+@pytest.mark.parametrize("content", ["a>>b c d", "x>b and stuff"])
+def test_fts_match_span_excludes_adjacent_marker_characters(content):
+    with sqlite3.connect(":memory:") as connection:
+        connection.execute("CREATE VIRTUAL TABLE docs USING fts5(content)")
+        connection.execute("INSERT INTO docs VALUES (?)", (content,))
+        snippet, = connection.execute(
+            "SELECT snippet(docs, 0, '>>>', '<<<', '...', 16) "
+            "FROM docs WHERE docs MATCH 'b'",
+        ).fetchone()
+    start = content.index("b")
+    assert lcm_tools._lcm_recall_fts_match_span(snippet, content) == (start, start + 1)
+
+
+def test_strict_fts_fallback_drops_stale_fused_chunk_span(recall_engine, monkeypatch):
+    content = "The dashboard is ready."
+    store_id = recall_engine._store.append("session-a", {"role": "user", "content": content})
+    chunk_hit = {
+        "kind": "message_excerpt", "store_id": store_id, "session_id": "session-a",
+        "snippet": "obsolete vector passage", "content_offset": 120,
+        "chunk_span": {"char_start": 120, "char_end": 143},
+        "_fts_snippet": "The >>>dashboard<<< is ready.",
+    }
+    monkeypatch.setattr(lcm_tools, "_LCM_RECALL_ANSWER_READY_EXPANDED_HIT_LIMIT", 0)
+    monkeypatch.setattr(lcm_tools, "_lcm_recall_chunk_arm",
+                        lambda *a, **k: ([dict(chunk_hit)], "full", 1, 1))
+    # Supply the corpus metadata needed to run the mock vector arm.
+    _seed_chunk_vectors(recall_engine, [(store_id, 0, 0, len(content), [1.0, 0.0])])
+    hit = _recall(recall_engine, monkeypatch, query="dashboard", include="verbatim",
+                  detail="answer_ready", limit=1)["hits"][0]
+    assert set(hit["arms"]) == {"chunk", "fts"}
+    assert hit["snippet"] == content
+    assert hit["content_offset"] == 0
+    assert "chunk_span" not in hit
 
 
 def test_answer_ready_expands_summary_ref_with_2400_char_bound(
@@ -3363,6 +3601,28 @@ def test_provider_alias_resolves_to_its_canonical_provider_id(
     assert real_resolve_provider(config).provider_id == canonical_provider
 
 
+@pytest.mark.parametrize("local", [False, True])
+@pytest.mark.parametrize("unreadable", [False, True])
+def test_catchup_advisory_classification_never_masks_read_error(recall_engine, monkeypatch, local, unreadable):
+    provider = SimpleNamespace(model_id="fixture-model")
+    if local:
+        provider.provider_id = "fastembed"
+    store = VectorStore(recall_engine._store.db_path, config=recall_engine._config)
+    try:
+        store.register_profile("fixture-model", "fastembed", 2)
+    finally:
+        store.close()
+    if unreadable:
+        def fail(*args, **kwargs):
+            raise sqlite3.OperationalError("synthetic metadata read failure")
+        monkeypatch.setattr(lcm_tools.sqlite3, "connect", fail)
+    reason = lcm_tools._lcm_recall_catchup_reason(recall_engine, provider, "summary")
+    if local:
+        assert "catching up" in reason and "coverage not certified" in reason
+    else:
+        assert reason is None
+
+
 @pytest.mark.parametrize(("configured_provider", "canonical_provider"), _PROVIDER_ALIAS_PAIRS)
 def test_provider_alias_uses_existing_vector_corpus_for_fts_fairness(
     recall_engine,
@@ -3384,6 +3644,16 @@ def test_provider_alias_uses_existing_vector_corpus_for_fts_fairness(
         [(node, [1.0, 0.0])],
         provider=canonical_provider,
     )
+    if canonical_provider == "fastembed":
+        from hermes_lcm import command, embedding_maintenance
+        embedding_maintenance.note_local_model_present(recall_engine._config)
+        store = VectorStore(recall_engine._store.db_path, config=recall_engine._config)
+        try:
+            for task in ("summary", "chunk"):
+                identity = store.register_profile("mock-model", "fastembed", 2, task=task)
+                command._record_embedding_catchup(recall_engine._store.db_path, task, identity, 0)
+        finally:
+            store.close()
 
     provider = MockProvider()
     provider.provider_id = canonical_provider
@@ -3397,6 +3667,7 @@ def test_provider_alias_uses_existing_vector_corpus_for_fts_fairness(
 
     monkeypatch.setattr(lcm_tools.time, "monotonic", lambda: clock[0])
     _freeze_vector_store_clock(monkeypatch, clock)
+    monkeypatch.setattr(lcm_tools, "probe_provider_availability", lambda config: {"available": True, "detail": "synthetic backend"})
     monkeypatch.setattr(lcm_tools, "resolve_provider", lambda _config: provider)
     monkeypatch.setattr(lcm_tools, "_lcm_recall_fts_arm", fts_arm)
 

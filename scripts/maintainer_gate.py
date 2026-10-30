@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import json
 import sys
+from fnmatch import fnmatchcase
 from typing import Any
 
 
@@ -18,10 +19,11 @@ REQUIRED_CI_CHECK_PAIRS = (
     ("test (3.12)", 15368),
     ("test (3.13)", 15368),
     ("test (3.14)", 15368),
+    ("bench-tests", 15368),
+    ("tests-ran", 15368),
 )
-# Required on the PR head only. The Differential workflow runs on pull requests (plus nightly and on dispatch),
-# not on pushes to main. Strict mode makes the PR's merge-ref run cover the merged tree, so post-merge
-# verification checks the CI pairs above on the merge commit.
+# Required on the PR head and merge group. Differential does not run on pushes to main;
+# the merge-group run covers the merged tree and must be verified on the merge commit.
 REQUIRED_PR_ONLY_CHECK_PAIRS = (("differential", 15368),)
 REQUIRED_CHECK_PAIRS = REQUIRED_CI_CHECK_PAIRS + REQUIRED_PR_ONLY_CHECK_PAIRS
 # Changed-path risk map for the land-pr review obligation. It is a readiness hint
@@ -47,7 +49,7 @@ TURN_PATH_FILES = {
     "dag.py", "engine.py", "escalation.py", "externalize.py", "extraction.py", "fresh_tail.py",
     "host_uid.py", "host_uid_emit.py", "identity_anchor.py", "ingest_protection.py",
     "leaf_prep.py", "lifecycle_state.py", "message_analysis.py", "message_content.py", "placeholder_ledger.py",
-    "prefix_matching.py", "reconcile.py", "sanitize.py", "store_complete.py",
+    "prefix_matching.py", "reconcile.py", "sanitize.py", "sender_capture.py", "store_complete.py",
     "summary_attempt.py", "summary_input_clip.py", "summary_outcome.py", "survival_codec.py",
     "survival_fit.py", "tokens.py", "tool_pairs.py",
     "config.py",  # Defaults and loaders set fresh-tail cuts, filters and summary requests.
@@ -74,6 +76,8 @@ TURN_PATH_FILES = {
 }
 # Explicit exclusions: classify every top-level Python module, not just reachable dependencies.
 NON_TURN_PATH_FILES = {
+    "entity_ops.py",  # Default-off entity event operations and resolved view.
+    "entity_store.py",  # Default-off entity-memory persistence.
     "fork_summary_quarantine.py",  # fork: operator-run repair (scripts/fork_quarantine_summary_rows.py), never imported by the engine.
     "fork_copy_quarantine.py",  # fork: operator-run repair (scripts/fork_quarantine_copy_rows.py), never imported by the engine.
     "adaptive_retrieval.py",  # Default-off adaptive retrieval controller.
@@ -88,12 +92,14 @@ NON_TURN_PATH_FILES = {
     "command_doctor.py",  # Read-only /lcm doctor text diagnostics only.
     "command_router.py",  # Explicit slash-command grammar only.
     "command_status.py",  # Operator status rendering only.
+    "cpu_capacity.py",  # Explicit recall/doctor policy; no ingest or context shaping.
     "embedding_maintenance.py",  # Default-off embedding maintenance.
     "embedding_provider.py",  # Default-off embedding provider path.
     "evidence_compiler.py",  # Default-off hook or explicit evidence tool.
     "evidence_pack.py",  # Explicit evidence tool or default-off compiler.
     "evidence_tools.py",  # Explicit evidence tool handlers only.
     "expand_query_tools.py",  # Explicit lcm_expand_query tool handler only.
+    "expand_tools.py",  # Explicit lcm_describe/lcm_expand tool handlers only.
     "expansion_evidence.py",  # Explicit expansion context/provenance only.
     "guidance.py",  # Exported policy loader unused by default prompt.
     "host_evidence.py",  # Unwired opt-in host evidence helper.
@@ -101,12 +107,14 @@ NON_TURN_PATH_FILES = {
     "inspect_tools.py",  # Explicit lcm_inspect tool handler; read-only metadata.
     "level3_repair.py",  # Explicit repair or read-only doctor scan.
     "maintenance.py",  # Explicit backup, repair or rotation only.
+    "memory_tools.py",  # Default-off, read-only entity cards.
     "occurrence_time.py",  # Retrieval metadata; never durable turn occurrence.
     "preanswer_evidence.py",  # Unwired opt-in pre-answer helper.
     "presets.py",  # Status/dry-run suggestions; no live config mutation.
     "query_view_store.py",  # Default-off query views; optional-schema verification.
     "reasoning.py",  # Explicit computation or default-off pre-answer hook.
     "recall_delivery.py",  # Explicit recall; proactive assembly defaults off.
+    "recall_session.py",  # Default-off session delivery for explicit recall only.
     "recent.py",  # Explicit recent-history tool response only.
     "requirements_compiler.py",  # Default-off pre-answer compilation.
     "retrieval_context.py",  # Retrieval-reader connection bindings only.
@@ -156,6 +164,7 @@ def _trusted_checks(
     checks: list[dict[str, Any]],
     target_sha: str,
     required_pairs: tuple[tuple[str, int], ...] = REQUIRED_CHECK_PAIRS,
+    allow_multiple: bool = False,
 ) -> tuple[list[dict[str, Any]], list[str]]:
     matched: list[dict[str, Any]] = []
     blockers: list[str] = []
@@ -173,13 +182,25 @@ def _trusted_checks(
             if check.get("status") == "completed"
             and check.get("conclusion") == "success"
         ]
-        if len(exact) > 1:
+        if len(exact) > 1 and not allow_multiple:
             blockers.append(f"TRUSTED_CHECK_DUPLICATE:{context}:{integration_id}")
-        elif len(passing) != 1:
+        elif not passing or len(passing) != len(exact):
             blockers.append(f"TRUSTED_CHECK_UNSATISFIED:{context}:{integration_id}")
         else:
             matched.append({"context": context, "integration_id": integration_id})
     return matched, blockers
+
+
+def _active_main_policy(policy: dict[str, Any]) -> bool:
+    refs = policy.get("conditions", {}).get("ref_name", {})
+    return (
+        policy.get("enforcement") == "active"
+        and bool(set(refs.get("include", [])) & {"~DEFAULT_BRANCH", "refs/heads/main"})
+        and not any(
+            ref in {"~DEFAULT_BRANCH", "~ALL"} or fnmatchcase("refs/heads/main", ref)
+            for ref in refs.get("exclude", [])
+        )
+    )
 
 
 def _base_blockers(data: dict[str, Any]) -> tuple[list[str], str, list[dict[str, Any]]]:
@@ -197,7 +218,9 @@ def _base_blockers(data: dict[str, Any]) -> tuple[list[str], str, list[dict[str,
         or policy.get("base_ref") != "main"
         or not policy.get("base_sha")
         or policy.get("ruleset_id") != RULESET_ID
-        or policy.get("strict_required_status_checks_policy") is not True
+        or not _active_main_policy(policy)
+        or policy.get("strict_required_status_checks_policy") is not False
+        or policy.get("merge_queue") != {"merge_method": "MERGE", "grouping_strategy": "ALLGREEN", "max_entries_to_merge": 1}
         or [_pair(item) for item in policy.get("required_checks", [])]
         != list(REQUIRED_CHECK_PAIRS)
     ):
@@ -425,7 +448,9 @@ def _evaluate_post_merge(data: dict[str, Any]) -> dict[str, Any]:
         or policy.get("base_ref") != "main"
         or not policy.get("base_sha")
         or policy.get("ruleset_id") != RULESET_ID
-        or policy.get("strict_required_status_checks_policy") is not True
+        or not _active_main_policy(policy)
+        or policy.get("strict_required_status_checks_policy") is not False
+        or policy.get("merge_queue") != {"merge_method": "MERGE", "grouping_strategy": "ALLGREEN", "max_entries_to_merge": 1}
         or [_pair(item) for item in policy.get("required_checks", [])]
         != list(REQUIRED_CHECK_PAIRS)
     ):
@@ -459,7 +484,7 @@ def _evaluate_post_merge(data: dict[str, Any]) -> dict[str, Any]:
         blockers.append("ISSUE_DISPOSITION_UNVERIFIED")
 
     matched, check_blockers = _trusted_checks(
-        data.get("checks", []), merge_commit, REQUIRED_CI_CHECK_PAIRS
+        data.get("checks", []), merge_commit, allow_multiple=True
     )
     blockers.extend(check_blockers)
     decision = _decision_for(blockers, "post_merge")

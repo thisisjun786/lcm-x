@@ -778,7 +778,7 @@
         {
           "check": "database_integrity",
           "status": "fail",
-          "detail": "fixture SQL fault"
+          "detail": "error: fixture SQL fault (long-lived connection; unconfirmed)"
         },
         {
           "check": "ingest_health",
@@ -1001,7 +1001,7 @@
           "check": "database_integrity",
           "status": "fail",
           "action": "inspect",
-          "operator_action": "stop and inspect the SQLite database path; restore from backup if integrity_check is not ok",
+          "operator_action": "rerun on a fresh connection or after a restart; restore only if that check also fails",
           "warning_only": false,
           "rationale": "operator review required before changing persisted LCM state"
         }
@@ -2209,9 +2209,42 @@
           "detail": "ok"
         },
         {
-          "check": "payload_storage",
+          "check": "sqlite_storage",
           "status": "fail",
-          "detail": "fixture SQL fault"
+          "detail": {
+            "database_path": "<tmp>/lcm.db",
+            "database_exists": true,
+            "journal_mode": "wal",
+            "quick_check": "error: fixture SQL fault (long-lived connection; unconfirmed)",
+            "database_size_bytes": "<size>",
+            "wal_size_bytes": "<size>"
+          }
+        },
+        {
+          "check": "payload_storage",
+          "status": "pass",
+          "detail": {
+            "largest_content_rows": [],
+            "largest_tool_calls_rows": [],
+            "suspicious_data_uri_content_rows": [],
+            "suspicious_data_uri_tool_calls_rows": [],
+            "suspicious_base64_like_rows": [],
+            "quarantined_assistant_rows": [],
+            "suspicious_repetitive_assistant_rows": [],
+            "heartbeat_noise_rows": [],
+            "externalized_payload_dir": "<tmp>/home/lcm-large-outputs",
+            "externalized_payload_count": 0,
+            "externalized_payload_bytes": 0,
+            "externalized_payload_chars": 0,
+            "latest_externalized_payload_path": "",
+            "latest_externalized_payload_mtime": 0.0,
+            "externalized_payload_refs_total": 0,
+            "externalized_payload_refs_existing": 0,
+            "externalized_payload_refs_missing": 0,
+            "externalized_payload_files_unreferenced": 0,
+            "missing_externalized_payload_refs": [],
+            "unreferenced_externalized_payload_files": []
+          }
         },
         {
           "check": "sensitive_pattern_handling",
@@ -2328,12 +2361,12 @@
       ],
       "guidance": [
         {
-          "check": "payload_storage",
+          "check": "sqlite_storage",
           "status": "fail",
           "action": "inspect",
-          "operator_action": "inspect payload rows/refs; restore missing externalized payload files from backup before deleting or rewriting anything",
+          "operator_action": "rerun on a fresh connection or after a restart; restore only if that check also fails",
           "warning_only": false,
-          "rationale": "payload diagnostic failures mean doctor could not read storage risk state reliably"
+          "rationale": "operator review required before changing persisted LCM state"
         }
       ]
     },
@@ -7673,7 +7706,7 @@
           "check": "embedding_provider_health",
           "status": "warn",
           "action": "inspect",
-          "operator_action": "semantic retrieval is configured but not runnable: reinstall the optional embedding dependency (e.g. `pip install fastembed` into the active Hermes virtualenv) or fix LCM_EMBEDDING_PROVIDER/LCM_EMBEDDING_MODEL and the provider credentials, then run `/lcm embed warmup` and re-run `/lcm doctor`. A dependency installed by hand can be dropped by a Hermes update, so recheck this after an update. Nothing is lost meanwhile -- the lossless store is intact and recall falls back to full-text",
+          "operator_action": "semantic retrieval is configured but not runnable: install the local fastembed dependency companion with `hermes plugins install electricsheephq/lcm-x/companions/hermes-lcm-x-local-embeddings --ref <LCM-X-40-character-SHA>`; if installed, run `HERMES_HOME=<tmp>/home hermes -p default plugins enable hermes-lcm-x-local-embeddings`. Otherwise fix LCM_EMBEDDING_PROVIDER/LCM_EMBEDDING_MODEL and provider credentials. Restart Hermes after enable, then run `/lcm embed warmup` and re-run `/lcm doctor`. Nothing is lost meanwhile -- the lossless store is intact and recall falls back to full-text",
           "warning_only": true,
           "rationale": "an unavailable embedding provider degrades semantic recall to full-text; it is a retrieval-capability problem, not persisted-state corruption"
         }
@@ -10022,7 +10055,7 @@
   "traces": {
     "healthy": [
       "call: inactive_record_notice",
-      "sql: PRAGMA integrity_check",
+      "sql: PRAGMA busy_timeout",
       "call: inspect_lcm_schema_health",
       "sql: PRAGMA database_list",
       "sql: SELECT name FROM sqlite_master WHERE type='table' ORDER BY name",
@@ -10061,7 +10094,7 @@
       "sql: CREATE TABLE IF NOT EXISTS metadata ( key TEXT PRIMARY KEY, value TEXT )",
       "sql: SELECT value FROM metadata WHERE key = 'fts_integrity_failed:nodes_fts'",
       "sql: PRAGMA journal_mode",
-      "sql: PRAGMA quick_check",
+      "sql: PRAGMA busy_timeout",
       "call: scan_sqlite_payload_risks",
       "sql: SELECT store_id, session_id, source, role, COALESCE(length(content), 0) AS content_len, content FROM messages ORDER BY content_len DESC LIMIT 5",
       "sql: SELECT store_id, session_id, source, role, COALESCE(length(tool_calls), 0) AS tool_calls_len, tool_calls FROM messages ORDER BY tool_calls_len DESC LIMIT 5",
@@ -10099,7 +10132,7 @@
     ],
     "fts_fail": [
       "call: inactive_record_notice",
-      "sql: PRAGMA integrity_check",
+      "sql: PRAGMA busy_timeout",
       "call: inspect_lcm_schema_health",
       "sql: PRAGMA database_list",
       "sql: SELECT name FROM sqlite_master WHERE type='table' ORDER BY name",
@@ -10138,7 +10171,7 @@
       "sql: CREATE TABLE IF NOT EXISTS metadata ( key TEXT PRIMARY KEY, value TEXT )",
       "sql: SELECT value FROM metadata WHERE key = 'fts_integrity_failed:nodes_fts'",
       "sql: PRAGMA journal_mode",
-      "sql: PRAGMA quick_check",
+      "sql: PRAGMA busy_timeout",
       "call: scan_sqlite_payload_risks",
       "sql: SELECT store_id, session_id, source, role, COALESCE(length(content), 0) AS content_len, content FROM messages ORDER BY content_len DESC LIMIT 5",
       "sql: SELECT store_id, session_id, source, role, COALESCE(length(tool_calls), 0) AS tool_calls_len, tool_calls FROM messages ORDER BY tool_calls_len DESC LIMIT 5",

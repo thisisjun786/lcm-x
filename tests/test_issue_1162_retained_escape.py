@@ -22,6 +22,12 @@ PAD = " alpha beta gamma delta" * 30
 RETAINED = "leaf would end before an unresolved retained occurrence"
 
 
+@pytest.fixture(autouse=True)
+def _legacy_retained_stop(monkeypatch):
+    # #1162: keep this observability suite on the pre-escape stop contract.
+    monkeypatch.setattr(LCMEngine, "_retained_escape_enabled", False, raising=False)
+
+
 @pytest.fixture
 def summaries(monkeypatch):
     captured: list[str] = []
@@ -91,6 +97,7 @@ def _passes(engine, view, n, lines, label="") -> tuple[list, list[dict]]:
         start = len(lines)
         view = engine.compress(view, current_tokens=10_000)
         engine.note_turn_complete()
+        engine._clear_persisted_no_progress_hold()
         engine._no_progress_hold = None
         new = lines[start:]
         stop = next((msg for _lvl, msg in new if msg.startswith("LCM compaction stop:")), "")
@@ -142,6 +149,7 @@ def _restore(tmp_path, sweep):
     view = [row for i in range(1, 13) for row in _turn(f"T{i}", 100.0 * i, tool=True)]
     view = engine.compress(view, current_tokens=10_000)
     engine.note_turn_complete()
+    engine._clear_persisted_no_progress_hold()
     engine._no_progress_hold = None
     tools = [m for m in view if m.get("role") == "tool"]
     tools[0]["content"] = "[Host replaced this tool output with genuinely new content]"
@@ -278,6 +286,7 @@ def _streak_of_three(tmp_path, lines):
 def _one_pass(engine, view, **kwargs):
     view = engine.compress(view, **kwargs)
     engine.note_turn_complete()
+    engine._clear_persisted_no_progress_hold()
     engine._no_progress_hold = None
     return view
 
@@ -324,6 +333,7 @@ def test_only_passes_that_select_a_leaf_count(tmp_path, summaries, lines, monkey
             view = engine.compress(view, current_tokens=10_000)
             assert engine._last_compression_status == "sanitized"
         assert _streak(engine) == 1
+        engine._clear_persisted_no_progress_hold()
         engine._no_progress_hold = None
         with monkeypatch.context() as patch:
             patch.setattr(engine, "_select_oldest_leaf_chunk", lambda *_args, **_kwargs: [])
@@ -417,7 +427,6 @@ def _no_source(tmp_path, monkeypatch, sweep, empty):
 
 @SWEEP
 @pytest.mark.parametrize("empty", [False, True], ids=["host_summary", "empty_scan"])
-@pytest.mark.skip(reason="fork: injects via upstream-only _select_leaf_candidate (post-v0.28.0 refactor)")
 def test_no_source_stop_reaches_log_status_and_doctor(tmp_path, summaries, lines, monkeypatch, sweep, empty):
     engine, view = _no_source(tmp_path, monkeypatch, sweep, empty)
     try:
@@ -447,7 +456,6 @@ def test_no_source_stop_reaches_log_status_and_doctor(tmp_path, summaries, lines
 
 
 @pytest.mark.parametrize("empty", [False, True], ids=["host_summary", "empty_scan"])
-@pytest.mark.skip(reason="fork: injects via upstream-only _select_leaf_candidate (post-v0.28.0 refactor)")
 def test_the_stop_line_parsers_read_the_no_source_line(tmp_path, summaries, lines, monkeypatch, empty):
     from tests.test_host_fallback_stop_line import STOP as host_fallback
     from tests.test_issue_605_foreground_budget import STOP_LINE as foreground_budget
@@ -479,8 +487,8 @@ def test_contiguity_cut_does_not_claim_a_retained_blocker(tmp_path, monkeypatch,
         result = engine._store_complete_input(chunk, {}, {id(row): mapping[id(row)] for row in chunk},
                                               chunk, chunk, 0, {}, 1, scanned=(stored, False))
         assert result == [] and engine._store_complete_blocked is None
-        reason = engine._store_complete_empty_reason  # fork: the reason also names the hole row
-        assert reason.startswith("leaf input cannot form a contiguous stored prefix (hole=")
+        reason = "leaf input cannot form a contiguous stored prefix"
+        assert engine._store_complete_empty_reason == reason
         assert _rows(engine) == stored
         budget = ForegroundBudget(soft=0, hard=120.0, configured_timeout=60.0, estimates=ForegroundEstimates())
         budget.sweep_active, budget.selected = sweep, True
@@ -488,9 +496,8 @@ def test_contiguity_cut_does_not_claim_a_retained_blocker(tmp_path, monkeypatch,
         engine._last_threshold_full_sweep = {"stop_reason": reason} if sweep else {}
         engine._finish_foreground_budget(budget, [], 10_000)
         line = next(msg for _, msg in lines if msg.startswith("LCM compaction stop:"))
-        base = reason.split(" (", 1)[0]
-        assert f"reason={base if sweep else 'noop'} leaves=0 " in line, line
-        assert " empty_input=contiguity,hole=" in line and "blocked=" not in line, line
+        assert f"reason={reason if sweep else 'noop'} leaves=0 " in line, line
+        assert line.endswith(" empty_input=contiguity") and "blocked=" not in line, line
     finally:
         engine.shutdown()
 
