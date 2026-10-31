@@ -715,6 +715,7 @@ _AUTO_FOCUS_MAX_CHARS = 700
 _AUTO_FOCUS_PROMPT_MAX_CHARS = 160
 
 _PRESERVED_TODO_CONTEXT_PREFIX = "[Your active task list was preserved across context compression]"
+_OBJECTIVE_TRUNCATION_MARK = "\n[objective shortened; the full message stays in the store: use lcm_grep or lcm_expand]"
 
 # #608: after a sweep that spent its budget before the first leaf, the threshold answer is no for the hold
 # time. The minimum time for a summariser call and SweepBudgetExhausted live in escalation (#666).
@@ -6746,6 +6747,8 @@ class LCMEngine(
         if not isinstance(content, str):
             return None
         pos = self._verified_lcm_summary_prefix_end(content)
+        if pos is None and int(getattr(self._config, "preserved_objective_max_chars", 0) or 0) > 0:
+            pos = self._preserved_objective_head_end(content)  # opt-in: see _preserved_objective_carrier_rest
         if pos is None:
             return None
         for separator in ("\n\n---\n\n", "\n\n"):
@@ -6753,6 +6756,61 @@ class LCMEngine(
                 rest = content[pos + len(separator):]
                 return rest if rest.strip() else None
         return None
+
+    def _preserved_objective_carrier_rest(self, msg: Dict[str, Any]) -> Optional[str]:
+        """With ``preserved_objective_max_chars`` > 0: the user row the host merged behind LCM's emitted
+        preserved-objective head, else None. Ingest stores only that row (the head is LCM scaffolding whose
+        words are already stored), so no new copy of the objective is stored at each compaction."""
+        if int(getattr(self._config, "preserved_objective_max_chars", 0) or 0) <= 0:
+            return None
+        content = msg.get("content") if isinstance(msg, dict) and msg.get("role") == "user" else None
+        if not isinstance(content, str) or not content.startswith(_PRESERVED_OBJECTIVE_CONTEXT_PREFIX):
+            return None
+        pos = self._preserved_objective_head_end(content)
+        if pos is None:
+            return None
+        for separator in ("\n\n---\n\n", "\n\n"):
+            if content.startswith(separator, pos):
+                rest = content[pos + len(separator):]
+                return rest if rest.strip() else None
+        return None
+
+    def _preserved_objective_head_end(self, content: str) -> Optional[int]:
+        """End of an emitted preserved-objective head (label, objective, DAG-verified summary parts), only when
+        every paragraph of the objective is already stored in a non-objective user row of this session lineage
+        (dropping the head loses no user words); else None and the row keeps today's path (stored whole)."""
+        if not content.startswith(_PRESERVED_OBJECTIVE_CONTEXT_PREFIX + "\n") or not self._session_id:
+            return None
+        for boundary in re.finditer("\n\n---\n\n", content):
+            if not self._LCM_SUMMARY_PART_HEADER_RE.match(content, boundary.end()):
+                continue
+            end = self._verified_lcm_summary_prefix_end(content[boundary.end():])
+            if end is None:
+                return None
+            objective = content[len(_PRESERVED_OBJECTIVE_CONTEXT_PREFIX) + 1:boundary.start()]
+            if objective.endswith(_OBJECTIVE_TRUNCATION_MARK):
+                objective = objective[:-len(_OBJECTIVE_TRUNCATION_MARK)]
+            pieces = [piece.strip() for piece in objective.split("\n\n") if piece.strip()]
+            if not pieces or not self._objective_pieces_stored(pieces):
+                return None
+            return boundary.end() + end
+        return None
+
+    def _objective_pieces_stored(self, pieces: List[str]) -> bool:
+        owners = sorted({str(self._session_id), *self._identity_anchor_chain()})
+        marks = ",".join("?" * len(owners))
+        try:
+            for piece in pieces:
+                if self._store._conn.execute(
+                        f"SELECT 1 FROM messages WHERE session_id IN ({marks}) AND role = 'user' "
+                        "AND substr(content, 1, ?) != ? AND instr(content, ?) > 0 LIMIT 1",
+                        [*owners, len(_PRESERVED_OBJECTIVE_CONTEXT_PREFIX), _PRESERVED_OBJECTIVE_CONTEXT_PREFIX,
+                         piece[:512]]).fetchone() is None:
+                    return False
+        except Exception:
+            logger.debug("LCM preserved-objective head check failed", exc_info=True)
+            return False
+        return True
 
     def _is_verified_replay_scaffold_message(self, msg: Dict[str, Any]) -> bool:
         """Scaffold test for ingest-cursor reconciliation (commit proofs and the store matcher).
@@ -8075,6 +8133,9 @@ class LCMEngine(
                 if raw_remainder is not None:  # #436 R3: only the new row of a partially-held survivor
                     store_msg = {**replay_msg, "content": raw_remainder, "timestamp": None}
                     anchor_remainders[absolute_idx] = None
+                elif (objective_rest := self._preserved_objective_carrier_rest(replay_msg)) is not None:
+                    store_msg = {**replay_msg, "content": objective_rest}  # opt-in cap: the user's row only
+                    anchor_remainders[absolute_idx] = None
                 if (
                     str(original_msg.get("role") or "") == "tool"
                     and _is_hermes_persisted_output_marker(
@@ -9262,13 +9323,52 @@ class LCMEngine(
         )
         return content
 
+    def _objective_user_words(self, content: str) -> str:
+        """The user's own words of an objective source row, byte for byte, capped.
+
+        A row that LCM or the host built around the request (an earlier preserved objective
+        with its summary parts, a summary carrier) also holds LCM's own summaries. Those are
+        history, not the request: carrying them nested the whole summary prefix into every
+        later objective. Only DAG-verified LCM summary parts and the objective label itself are
+        removed (a quoted or pasted, unverified header is request text and stays); the rest is
+        kept byte for byte, then capped at ``preserved_objective_max_chars`` with a note. The
+        source row stays whole in the store.
+        """
+        limit = int(getattr(self._config, "preserved_objective_max_chars", 0) or 0)
+        if limit <= 0:
+            return content  # default: upstream's objective contract (#921/#958/#1221), byte for byte
+        text = content
+        while text.startswith(_PRESERVED_OBJECTIVE_CONTEXT_PREFIX + "\n"):
+            text = text[len(_PRESERVED_OBJECTIVE_CONTEXT_PREFIX) + 1:]
+        separator = "\n\n---\n\n"
+        parts, kept = text.split(separator), []
+        index = 0
+        while index < len(parts):
+            rest = separator.join(parts[index:])
+            end = self._verified_lcm_summary_prefix_end(rest) if index else None
+            if end is None:
+                kept.append(parts[index])
+                index += 1
+                continue
+            tail = rest[end:]  # a host row glued behind the verified parts is the user's
+            index = len(parts)
+            for glue in (separator, "\n\n"):
+                if tail.startswith(glue) and tail[len(glue):].strip():
+                    kept.append(tail[len(glue):])
+                    break
+        words = "\n\n".join(part for part in kept if part.strip()) if len(kept) > 1 else (kept[0] if kept else "")
+        if len(words) > limit:
+            mark = _OBJECTIVE_TRUNCATION_MARK
+            words = words[:max(0, limit - len(mark))] + mark
+        return words
+
     def _build_preserved_objective_summary_part(self, message: Dict[str, Any]) -> str:
         content = text_content_for_pattern_matching(message.get("content")) or ""
         content = self._sanitize_preserved_objective_content(
             content,
             role=str(message.get("role") or "user"),
         )
-        return f"{_PRESERVED_OBJECTIVE_CONTEXT_PREFIX}\n{content}"
+        return f"{_PRESERVED_OBJECTIVE_CONTEXT_PREFIX}\n{self._objective_user_words(content)}"
 
     def _latest_user_context_anchor(
         self,
@@ -9369,7 +9469,17 @@ class LCMEngine(
                             if new.strip() and new != first_new:
                                 candidates.append(f"{_PRESERVED_OBJECTIVE_CONTEXT_PREFIX}\n{new}")
                             break
-                return candidates
+                # Carry only the user's own words, capped: re-emitting the whole row on every
+                # compaction nested the summary prefix into the objective and stored a copy each time.
+                if int(getattr(self._config, "preserved_objective_max_chars", 0) or 0) <= 0:
+                    return candidates
+                rebuilt: List[str] = []
+                for candidate in candidates:
+                    words = self._objective_user_words(candidate)
+                    part = f"{_PRESERVED_OBJECTIVE_CONTEXT_PREFIX}\n{words}"
+                    if words.strip() and part not in rebuilt:
+                        rebuilt.append(part)
+                return rebuilt
             if message.get("role") != "user":
                 continue
             if self._is_preserved_todo_context_message(message):

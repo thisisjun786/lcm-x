@@ -97,6 +97,7 @@ CONFIG_ROWS = (
     ('cache_friendly_min_debt_groups', 'LCM_CACHE_FRIENDLY_MIN_DEBT_GROUPS', 'int', 2),
     ('deferred_maintenance_max_passes', 'LCM_DEFERRED_MAINTENANCE_MAX_PASSES', 'int', 4),
     ('summary_prefix_target_tokens', 'LCM_SUMMARY_PREFIX_TARGET_TOKENS', 'int', 0),
+    ('preserved_objective_max_chars', 'LCM_PRESERVED_OBJECTIVE_MAX_CHARS', 'int', 0),
     ('l3_truncate_tokens', 'LCM_L3_TRUNCATE_TOKENS', 'int', 512),
     ('max_assembly_tokens', 'LCM_MAX_ASSEMBLY_TOKENS', 'int', 0),
     ('reserve_tokens_floor', 'LCM_RESERVE_TOKENS_FLOOR', 'int', 0),

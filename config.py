@@ -826,6 +826,7 @@ ENV_FIELD_SPECS: tuple[_EnvFieldSpec, ...] = (
     _EnvFieldSpec("critical_budget_pressure_ratio", "LCM_CRITICAL_BUDGET_PRESSURE_RATIO", float),
     _EnvFieldSpec("threshold_full_sweep_enabled", "LCM_THRESHOLD_FULL_SWEEP_ENABLED", bool),
     _EnvFieldSpec("summary_prefix_target_tokens", "LCM_SUMMARY_PREFIX_TARGET_TOKENS", int),
+    _EnvFieldSpec("preserved_objective_max_chars", "LCM_PRESERVED_OBJECTIVE_MAX_CHARS", int),
     _EnvFieldSpec("foreground_soft_seconds", "LCM_FOREGROUND_SOFT_SECONDS", float),
     _EnvFieldSpec("foreground_hard_seconds", "LCM_FOREGROUND_HARD_SECONDS", float),
     _EnvFieldSpec("l2_budget_ratio", "LCM_L2_BUDGET_RATIO", float),
@@ -1044,6 +1045,9 @@ class LCMConfig:
     threshold_full_sweep_enabled: bool = True
     # Target frontier-summary size after a sweep (0 = one leaf budget, capped at a quarter of the compaction threshold).
     summary_prefix_target_tokens: int = 0
+    # Characters of the user's own words carried in the preserved-objective scaffold after compaction;
+    # with a value > 0, LCM summary parts and quoted history are dropped from it. 0 (default): upstream behaviour.
+    preserved_objective_max_chars: int = 0
     # #605: from compress() entry, after the first stored leaf or condensed node no summariser call starts unless it is expected
     # to end by this many seconds (0 = no soft target; at most the hard bound).
     foreground_soft_seconds: float = 60.0

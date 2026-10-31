@@ -1247,8 +1247,8 @@ def observe(case: Scenario, root: Path) -> Trace:
                 if sql.lstrip().startswith("--") or re.search(r"(['\"])(main|temp)\1\s*\.", sql):
                     return
                 normalized = canonical.text(sql.strip())
-                if (case.name == "stop-reason-retained-escape"
-                        and "'host_occurrence_snapshot:" in normalized):
+                if (case.name in {"stop-reason-retained-escape", "stop-reason-retained", "stop-reason-unattributed"}
+                        and "'host_occurrence_snapshot:" in normalized):  # fork: the latter two compact too
                     # The proof includes generated node IDs. Preserve digest equality/transitions
                     # in this new twin, as for _no_progress_proof_fingerprint, not their random bytes.
                     normalized = re.sub(

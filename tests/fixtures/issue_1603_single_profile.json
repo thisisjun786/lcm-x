@@ -301,6 +301,7 @@
     ],
     "summary_model": "",
     "summary_prefix_target_tokens": 0,
+    "preserved_objective_max_chars": 0,
     "summary_prompt_version": 1,
     "summary_reasoning_effort": "",
     "summary_spend_backoff_seconds": 1800.0,

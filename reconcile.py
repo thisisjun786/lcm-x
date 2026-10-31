@@ -77,6 +77,8 @@ try:
     _FORK_LATE_COPY_WINDOW = max(1, int(os.environ.get("LCM_FORK_LATE_COPY_WINDOW", "16")))
 except ValueError:
     _FORK_LATE_COPY_WINDOW = 16
+# fork: host rows after a preserved-objective row checked before the mapper lets that row jump ahead
+_OBJECTIVE_JUMP_WINDOW = 8
 
 _PRESERVED_OBJECTIVE_CONTEXT_PREFIX = "[Current user objective preserved from compacted history]"
 _PRESERVED_TODO_CONTEXT_PREFIX = "[Your active task list was preserved across context compression]"
@@ -4005,6 +4007,16 @@ class ReconcileMixin:
                 # in-order cursor past them, every one stayed unmapped, and the leaf stopped at the first as a
                 # "retained occurrence ... kind=shown" (default telegram session 10-25/26). Leave this row
                 # unmapped so its neighbours map in order; the late copy stays stored and is reached later.
+                continue
+            if (match_idx is not None and match_idx > store_idx
+                    and msg_content.startswith(_PRESERVED_OBJECTIVE_CONTEXT_PREFIX)
+                    and any(following is not None and following < match_idx
+                            for following in (find_message_match_index(m, store_idx)
+                                              for m in messages[msg_idx + 1:msg_idx + 1 + _OBJECTIVE_JUMP_WINDOW]))):
+                # fork: LCM's own preserved-objective row (a host-merged copy stored at the end of the store)
+                # must not jump the in-order cursor past the rows the following host rows map to; that left the
+                # whole kept tail unmapped and held the frontier at every later compaction. It stays unmapped
+                # (scaffolding, never an unpaired source row); its stored copy is reached as backlog.
                 continue
             if match_idx is not None:
                 ids_by_message_id[id(msg)] = candidates[match_idx]["store_id"]

@@ -1316,8 +1316,8 @@ class CompactionMixin:
             if id(message) in full_map:
                 continue
             if self._generated_context_carrier_remainder(message) is not None or self._is_context_summary_content(
-                    message.get("content")):
-                continue
+                    message.get("content")) or self._preserved_objective_context_content(message):
+                continue  # LCM scaffolding (summary, carrier, preserved objective) is never an unpaired source
             if (self._identity_anchor_key_occurrence(message, set(full_map.values()), carry) is not None
                     or self._identity_anchor_carrier_group(message, set())):
                 continue
