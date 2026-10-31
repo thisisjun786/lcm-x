@@ -65,3 +65,6 @@ __pycache__/
 
 # Reliability harness run outputs (bench/instruments/reliability)
 bench/instruments/reliability/runs/
+
+# Hypothesis example database (machine-local paths; never commit)
+.hypothesis/
