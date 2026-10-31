@@ -359,6 +359,12 @@ def test_environment_read_inventory():
         ("config.py", "containment_base_dir"): "LCM_HERMES_BASE_DIR: operator containment root stays process-wide",
         ("embedding_provider.py", "__init__"): "FASTEMBED_CACHE_PATH: process-wide model download cache",
         ("inactive_record.py", "_process_start"): "LC_ALL=C subprocess for ps process identity, not profile configuration",
+        # Fork: process-wide kill switches of fork patches (default on/off at import), not profile settings.
+        ("engine.py", "<module>"): "fork: LCM_FORK_OWN_SUMMARY_GUARD / LCM_FORK_UID_REPLAY_STAMPED kill switches",
+        ("reconcile.py", "<module>"): "fork: LCM_FORK_LATE_COPY_GUARD / LCM_FORK_LATE_COPY_WINDOW kill switches",
+        ("store_complete.py", "<module>"): "fork: LCM_FORK_COMPOSITE_REHYDRATE opt-in switch",
+        ("tokens.py", "_tiktoken_cache_dir"): "fork: TIKTOKEN_CACHE_DIR/DATA_GYM_CACHE_DIR/HERMES_HOME cache path",
+        ("tokens.py", "_load_encoder"): "fork: sets the tiktoken cache path for this process before loading",
         ("docs/process/evidence/1880-persisted-hold/compat_probe.py", "main"):
             "synthetic compatibility proof tool: isolated home and lazy-install controls only",
         ("docs/process/evidence/1880-persisted-hold/cost/cost_probe.py", "main"):
