@@ -1301,10 +1301,11 @@ class CompactionMixin:
     def _uid_leaf_candidates(self, candidate, view, full_map):
         """Keep unresolved occurrences live while allowing other groups to drain."""
         has_uid = any(isinstance(m.get("message_uid"), str) and m["message_uid"] for m in view)
+        # The leaf builder's covered set (_uid_set_leaf_input): every mapped id an existing node covers.
+        settled = self._store_complete_node_covered(set(full_map.values()))
         # A UID-less replay can resolve a gap left by an earlier sparse leaf.
         # Its already-published sources remain covered even above the frontier.
-        covered = self._store_complete_node_covered(
-            {sid for sid in full_map.values() if sid > self._last_compacted_store_id})
+        covered = {sid for sid in settled if sid > self._last_compacted_store_id}
         if not has_uid and not covered and all(
                 id(m) in full_map or self._is_context_summary_content(m.get("content")) for m in view):
             return candidate
@@ -1350,7 +1351,10 @@ class CompactionMixin:
                 while stop < len(candidate) and candidate[stop].get("role") == "tool":
                     stop += 1
             group = candidate[index:stop]
-            if not any(id(m) in unresolved or full_map.get(id(m)) in covered for m in group):
+            # A host group whose rows are all node-covered (also at or below the frontier, which the host may
+            # still show) gives the leaf builder nothing: skip it before the oldest chunk is chosen.
+            if not any(id(m) in unresolved or full_map.get(id(m)) in covered for m in group) and not all(
+                    full_map.get(id(m)) in settled for m in group):
                 out.extend(group)
             index = stop
         return out
