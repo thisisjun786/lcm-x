@@ -102,6 +102,7 @@ RAW_READERS = {
         "_disabled_tool_names", "host_message_uid_mode", "_parse_int_env_with_source",
         "_parse_float_env_with_source", "_hermes_config_path", "_lcm_config_string_with_source",
         "_warn_env_range", "from_env", "containment_base_dir", "companion_enable_command",
+        "_threshold_full_sweep_max_passes_with_source",
     },
     "db_bootstrap.py": {"_integrity_check_interval_hours"},
     "embedding_provider.py": {"probe_provider_availability", "_request", "rerank", "__init__"},

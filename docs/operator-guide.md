@@ -471,6 +471,7 @@ Useful environment variables:
 | `LCM_DYNAMIC_LEAF_CHUNK_ENABLED` | `false` | Enable backlog-sized leaf chunk targets; when off, one leaf takes at most max(`LCM_LEAF_CHUNK_TOKENS`, `LCM_DYNAMIC_LEAF_CHUNK_MAX`) of the oldest non-tail raw backlog, capped at 40% of a known window |
 | `LCM_DYNAMIC_LEAF_CHUNK_MAX` | `40000` | Upper bound for dynamic leaf chunk targets |
 | `LCM_THRESHOLD_FULL_SWEEP_ENABLED` | `true` | At threshold, run one synchronous bounded sweep that drains chunked raw history before publishing one new active context; `false` compacts only until pressure falls below the trigger |
+| `LCM_THRESHOLD_FULL_SWEEP_MAX_PASSES` | `12` | Summary calls (leaf plus condensation) one threshold sweep may make, `1`-`64`; also `lcm.threshold_full_sweep_max_passes` in config.yaml (env wins). A value outside the range is ignored with a config warning. The time bounds still apply: raise `LCM_FOREGROUND_SOFT_SECONDS` / `LCM_FOREGROUND_HARD_SECONDS` with it, or the sweep stops on time first |
 | `LCM_SUMMARY_PREFIX_TARGET_TOKENS` | `0` | Sweep-only summary-frontier target; `0` uses one leaf budget, capped at a quarter of the compaction threshold |
 | `LCM_PRESERVED_OBJECTIVE_MAX_CHARS` | `0` | Opt-in. `0` keeps today's preserved objective (carried byte for byte). A value `> 0` carries only the user's own words, up to that many characters (DAG-verified LCM summary parts are dropped; the full message stays in the store), and when the host merges its next user row onto LCM's objective row only that user row is stored, so no objective copy piles up |
 | `LCM_BACKGROUND_LEAF_PREP_ENABLED` | `false` | #787 slice 1: after each turn, summarise the oldest raw backlog above the frontier off-turn (never the fresh tail) once the host count passes P = threshold − 0.15 × window, and at the threshold crossing publish those prepared leaves through the fenced publication, with no model call, down to L = threshold − max(2 × chunk, 0.1 × window); still above L, the turn runs the normal path. Prepared leaves are in memory only. Off on windows where P ≤ 0.30 × window or L ≤ 0, when `auxiliary.compression.max_concurrency` is 1, and while ignore-message patterns are set. `/lcm status` reports `background_leaf_prep` counters while on |
@@ -991,7 +992,8 @@ What the main knobs do:
   pressure falls below the trigger. It always uses the configured working leaf
   size, then condenses a too-large summary frontier toward
   `LCM_SUMMARY_PREFIX_TARGET_TOKENS` (`0` means one leaf budget, capped at a quarter
-  of the compaction threshold). The whole invocation is bounded to 12 summary calls,
+  of the compaction threshold). The whole invocation is bounded to `LCM_THRESHOLD_FULL_SWEEP_MAX_PASSES`
+  summary calls (default 12; `1`-`64`, or `lcm.threshold_full_sweep_max_passes` in config.yaml),
   persists each completed DAG pass,
   and publishes one active context at the end. It remains synchronous and does
   not enable deferred/background maintenance.

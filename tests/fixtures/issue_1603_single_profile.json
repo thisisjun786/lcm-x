@@ -170,6 +170,7 @@
       "summary_reasoning_effort": "default",
       "summary_spend_backoff_seconds": "env:LCM_SUMMARY_SPEND_BACKOFF_SECONDS",
       "summary_spend_max_calls": "env:LCM_SUMMARY_SPEND_MAX_CALLS",
+      "threshold_full_sweep_max_passes": "default",
       "summary_spend_window_seconds": "env:LCM_SUMMARY_SPEND_WINDOW_SECONDS",
       "summary_timeout_ms": "env:LCM_SUMMARY_TIMEOUT_MS"
     },
@@ -311,6 +312,7 @@
     "survival_fit": true,
     "survival_reserve": 0.15,
     "temporal_rollups_enabled": true,
-    "threshold_full_sweep_enabled": true
+    "threshold_full_sweep_enabled": true,
+    "threshold_full_sweep_max_passes": 12
   }
 }

@@ -107,6 +107,7 @@ Use [docs/operator-guide.md](https://github.com/electricsheephq/lcm-x/blob/main/
 - `LCM_FRESH_TAIL_COUNT` (default `24`) and `LCM_FRESH_TAIL_MAX_TOKENS` (default `24000`): newest messages kept raw, and their token cap;
 - `LCM_LEAF_CHUNK_TOKENS` (default `24000`): maximum raw material per leaf compaction group;
 - `LCM_THRESHOLD_FULL_SWEEP_ENABLED` (default `true`): the threshold full sweep;
+- `LCM_THRESHOLD_FULL_SWEEP_MAX_PASSES` (default `12`, `1`-`64`; also `lcm.threshold_full_sweep_max_passes` in config.yaml, env wins): summary calls (leaf plus condensation) one threshold sweep may make; an out-of-range value is ignored with a config warning, and the foreground soft/hard seconds still bound the sweep;
 - `LCM_SUMMARY_PREFIX_TARGET_TOKENS` (default `0`): the summary-frontier size a threshold sweep condenses toward; `0` means one leaf budget capped at a quarter of the compaction threshold, so a small window's summaries cannot fill it (#1139);
 - `LCM_PRESERVED_OBJECTIVE_MAX_CHARS` (default `0`, opt-in): `0` keeps the preserved objective byte for byte. A value `> 0` carries only the user's own words in it, up to that many characters (DAG-verified LCM summary parts and nested objective labels are dropped; a quoted, unverified header stays; a longer request is cut with a note and stays whole in the store, `lcm_grep`/`lcm_expand`). With it on, a host row merged onto LCM's objective row is stored as the user's row only, so no objective copy is stored again at each compaction;
 - `LCM_BACKGROUND_LEAF_PREP_ENABLED` (default `false`, #787 slice 1): prepare leaf summaries off-turn above P = threshold − 0.15 × window and publish them at the threshold crossing with no model call, down to L = threshold − max(2 × chunk, 0.1 × window); `LCM_BACKGROUND_LEAF_PREP_MAX_CALLS` (default `8`) and `LCM_BACKGROUND_LEAF_PREP_WINDOW_S` (default `600`) bound its own spend guard;
@@ -240,6 +241,7 @@ warns without changing its behavior until removal.
 | `LCM_DEFERRED_MAINTENANCE_MAX_PASSES` | `int` | `4` | — | — |
 | `LCM_CRITICAL_BUDGET_PRESSURE_RATIO` | `float` | `0.0` | — | — |
 | `LCM_THRESHOLD_FULL_SWEEP_ENABLED` | `bool` | `true` | — | — |
+| `LCM_THRESHOLD_FULL_SWEEP_MAX_PASSES` | `int` | `12` | `>= 1`, `<= 64` | — |
 | `LCM_SUMMARY_PREFIX_TARGET_TOKENS` | `int` | `0` | — | — |
 | `LCM_PRESERVED_OBJECTIVE_MAX_CHARS` | `int` | `0` | — | — |
 | `LCM_FOREGROUND_SOFT_SECONDS` | `float` | `60.0` | — | — |

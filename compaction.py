@@ -36,6 +36,7 @@ from .escalation import (
 from .externalize import ingest_payload_writes, payload_lookup_scope
 from .fresh_tail import tool_group_safe_end
 from . import leaf_prep
+from .config import LCMConfig
 from .lifecycle_state import LifecycleBindingChangedError, LifecyclePublicationConflictError
 from .message_content import text_content_for_pattern_matching
 from .reconcile import (
@@ -61,7 +62,8 @@ _RETAINED_NOOP_REASON = "leaf would end before an unresolved retained occurrence
 
 logger = logging.getLogger(__name__)
 
-_THRESHOLD_FULL_SWEEP_MAX_PASSES = 12
+# Default only; a sweep reads its budget from LCMConfig.threshold_full_sweep_max_passes.
+_THRESHOLD_FULL_SWEEP_MAX_PASSES = LCMConfig.threshold_full_sweep_max_passes
 _THRESHOLD_FULL_SWEEP_MAX_SECONDS = 120.0
 _EXTRACTION_HEADROOM_SECONDS = 2.0  # overhead between the extraction timeout and the next admit
 _DEFAULT_SWEEP_TARGET_THRESHOLD_SHARE = 0.25
@@ -2135,7 +2137,7 @@ class CompactionMixin:
         base_max_leaf_passes = 4 if self._config.dynamic_leaf_chunk_enabled else 1
         state.max_leaf_passes = base_max_leaf_passes
         if state.threshold_full_sweep_active:
-            state.max_leaf_passes = _THRESHOLD_FULL_SWEEP_MAX_PASSES
+            state.max_leaf_passes = self._config.threshold_full_sweep_max_passes
         if state.deferred_maintenance_active:
             state.max_leaf_passes = max(1, self._config.deferred_maintenance_max_passes)
         return "next", None
@@ -2155,7 +2157,7 @@ class CompactionMixin:
                 state.pre_leaf_condensation_passes, state.pre_leaf_condensation_reason = (
                     self._run_threshold_sweep_condensation(
                         target_tokens=state.sweep_target_tokens,
-                        pass_budget=_THRESHOLD_FULL_SWEEP_MAX_PASSES - 1,
+                        pass_budget=self._config.threshold_full_sweep_max_passes - 1,
                         deadline=state.sweep_deadline,
                         focus_topic=focus_topic,
                     )
@@ -2648,7 +2650,8 @@ class CompactionMixin:
                 elif state.sweep_raw_drained:
                     remaining_passes = max(
                         0,
-                        _THRESHOLD_FULL_SWEEP_MAX_PASSES - state.leaf_passes - state.pre_leaf_condensation_passes,
+                        self._config.threshold_full_sweep_max_passes
+                        - state.leaf_passes - state.pre_leaf_condensation_passes,
                     )
                     state.condensation_passes, state.sweep_stop_reason = (
                         self._run_threshold_sweep_condensation(

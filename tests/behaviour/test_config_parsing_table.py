@@ -136,6 +136,7 @@ CONFIG_ROWS = (
     ('summary_prompt_version', 'LCM_SUMMARY_PROMPT_VERSION', 'int', 1),
     ('summary_spend_max_calls', 'LCM_SUMMARY_SPEND_MAX_CALLS', 'int', 24),
     ('summary_timeout_ms', 'LCM_SUMMARY_TIMEOUT_MS', 'int', 120000),
+    ('threshold_full_sweep_max_passes', 'LCM_THRESHOLD_FULL_SWEEP_MAX_PASSES', 'int', 12),
     # config._parse_str_env -> LCMConfig.from_env (construction time).
     ('custom_instructions', 'LCM_CUSTOM_INSTRUCTIONS', 'str', ''),
     ('extraction_model', 'LCM_EXTRACTION_MODEL', 'str', ''),
@@ -184,6 +185,7 @@ SPECIAL = {
     "leaf_target_max_tokens": (D, D, D, D, D, D, D, D, D, D, D, D, D, D, D, HUGE),
     "summary_prompt_version": (1,) * 16,
     "stub_first_exit_target_ratio": (D, D, D, D, 1.0, 0.0, D, D, D, D, D, D, D, D, 0.5, D),
+    "threshold_full_sweep_max_passes": (D, D, D, D, 1, D, D, D, D, D, D, D, D, D, D, D),  # 1-64 only
 }
 
 

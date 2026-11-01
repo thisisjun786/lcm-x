@@ -23,6 +23,7 @@ def test_reference_diagnostic_ranges():
         "survival_reserve": (0.0, 0.9, True),
         "leaf_chunk_tokens": (1, None, True),
         "summary_timeout_ms": (0, None, False),
+        "threshold_full_sweep_max_passes": (1, 64, True),
     }
 
 
