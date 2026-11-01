@@ -242,6 +242,7 @@ warns without changing its behavior until removal.
 | `LCM_CRITICAL_BUDGET_PRESSURE_RATIO` | `float` | `0.0` | — | — |
 | `LCM_THRESHOLD_FULL_SWEEP_ENABLED` | `bool` | `true` | — | — |
 | `LCM_THRESHOLD_FULL_SWEEP_MAX_PASSES` | `int` | `12` | `>= 1`, `<= 64` | — |
+| `LCM_THRESHOLD_FULL_SWEEP_CONDENSATION_RESERVE_PASSES` | `int` | `0` | `>= 0`, `<= 16` | — |
 | `LCM_SUMMARY_PREFIX_TARGET_TOKENS` | `int` | `0` | — | — |
 | `LCM_PRESERVED_OBJECTIVE_MAX_CHARS` | `int` | `0` | — | — |
 | `LCM_FOREGROUND_SOFT_SECONDS` | `float` | `60.0` | — | — |

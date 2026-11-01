@@ -467,6 +467,7 @@ _SUPPORTED_LCM_CONFIG_YAML_KEYS = {
     "expansion_reasoning_effort",
     "embedding_query_prefix", "embedding_document_prefix",
     "threshold_full_sweep_max_passes",
+    "threshold_full_sweep_condensation_reserve_passes",
 }
 
 
@@ -590,10 +591,10 @@ def _hermes_compression_threshold_with_source_and_warning(default: float) -> tup
     return default, "default", None
 
 
-def _threshold_full_sweep_max_passes_with_source(default: int) -> tuple[int, str, str | None]:
-    """Env, then ``lcm.threshold_full_sweep_max_passes``, then ``default``; a value that is not an
-    integer in [1, 64] is ignored with a warning and the next source applies."""
-    minimum, maximum, _inclusive = _ENV_RANGES["threshold_full_sweep_max_passes"]
+def _bounded_lcm_int_with_source(name: str, default: int) -> tuple[int, str, str | None]:
+    """Env ``LCM_<NAME>``, then ``lcm.<name>``, then ``default``; a value that is not an integer in
+    ``_ENV_RANGES[name]`` is ignored with a warning and the next source applies."""
+    minimum, maximum, _inclusive = _ENV_RANGES[name]
 
     def checked(raw: Any, label: str) -> tuple[int | None, str | None]:
         try:
@@ -608,13 +609,13 @@ def _threshold_full_sweep_max_passes_with_source(default: int) -> tuple[int, str
 
     value, source, warnings = default, "default", []
     lcm_section = _load_hermes_config_yaml().get("lcm")
-    raw_yaml = lcm_section.get("threshold_full_sweep_max_passes") if isinstance(lcm_section, dict) else None
+    raw_yaml = lcm_section.get(name) if isinstance(lcm_section, dict) else None
     if raw_yaml is not None:
-        parsed, warning = checked(raw_yaml, "lcm.threshold_full_sweep_max_passes")
+        parsed, warning = checked(raw_yaml, f"lcm.{name}")
         if parsed is not None:
-            value, source = parsed, "config_yaml:lcm.threshold_full_sweep_max_passes"
+            value, source = parsed, f"config_yaml:lcm.{name}"
         warnings.append(warning)
-    key = "LCM_THRESHOLD_FULL_SWEEP_MAX_PASSES"
+    key = f"LCM_{name.upper()}"
     raw_env = lcm_env_get(key)
     if raw_env is not None:
         parsed, warning = checked(raw_env, f"env {key}")
@@ -731,8 +732,9 @@ _ENV_RANGES = {
     "survival_reserve": (0.0, 0.9, True),
     "leaf_chunk_tokens": (1, None, True),
     "summary_timeout_ms": (0, None, False),
-    # Enforced: a value outside the range is ignored (see _threshold_full_sweep_max_passes_with_source).
+    # Enforced: a value outside the range is ignored (see _bounded_lcm_int_with_source).
     "threshold_full_sweep_max_passes": (1, 64, True),
+    "threshold_full_sweep_condensation_reserve_passes": (0, 16, True),
 }
 
 
@@ -863,6 +865,8 @@ ENV_FIELD_SPECS: tuple[_EnvFieldSpec, ...] = (
     _EnvFieldSpec("critical_budget_pressure_ratio", "LCM_CRITICAL_BUDGET_PRESSURE_RATIO", float),
     _EnvFieldSpec("threshold_full_sweep_enabled", "LCM_THRESHOLD_FULL_SWEEP_ENABLED", bool),
     _EnvFieldSpec("threshold_full_sweep_max_passes", "LCM_THRESHOLD_FULL_SWEEP_MAX_PASSES", int),
+    _EnvFieldSpec("threshold_full_sweep_condensation_reserve_passes",
+                  "LCM_THRESHOLD_FULL_SWEEP_CONDENSATION_RESERVE_PASSES", int),
     _EnvFieldSpec("summary_prefix_target_tokens", "LCM_SUMMARY_PREFIX_TARGET_TOKENS", int),
     _EnvFieldSpec("preserved_objective_max_chars", "LCM_PRESERVED_OBJECTIVE_MAX_CHARS", int),
     _EnvFieldSpec("foreground_soft_seconds", "LCM_FOREGROUND_SOFT_SECONDS", float),
@@ -1007,6 +1011,7 @@ _SOURCE_TRACKED_ENV_FIELDS = frozenset({
     "summary_prompt_version",
     "stub_first_exit_target_ratio",
     "threshold_full_sweep_max_passes",
+    "threshold_full_sweep_condensation_reserve_passes",
 })
 
 # Fields exposed as runtime preset overrides (consumed by presets.py).
@@ -1085,6 +1090,9 @@ class LCMConfig:
     # Summary calls (leaf plus condensation) one threshold sweep may make; 1-64.
     # Env LCM_THRESHOLD_FULL_SWEEP_MAX_PASSES, then config.yaml lcm.threshold_full_sweep_max_passes.
     threshold_full_sweep_max_passes: int = 12
+    # Of those, passes kept for condensation when the leaf work hits the budget; 0-16, 0 = off.
+    # Env LCM_THRESHOLD_FULL_SWEEP_CONDENSATION_RESERVE_PASSES, then lcm.threshold_full_sweep_condensation_reserve_passes.
+    threshold_full_sweep_condensation_reserve_passes: int = 0
     # Target frontier-summary size after a sweep (0 = one leaf budget, capped at a quarter of the compaction threshold).
     summary_prefix_target_tokens: int = 0
     # Characters of the user's own words carried in the preserved-objective scaffold after compaction;
@@ -1633,10 +1641,10 @@ class LCMConfig:
                        "(must be >= 0 and <= 1)")
             c.stub_first_exit_target_ratio, source = LCMConfig.stub_first_exit_target_ratio, "default"
         _record("stub_first_exit_target_ratio", source, warning)
-        c.threshold_full_sweep_max_passes, source, warning = _threshold_full_sweep_max_passes_with_source(
-            c.threshold_full_sweep_max_passes
-        )
-        _record("threshold_full_sweep_max_passes", source, warning)
+        for name in ("threshold_full_sweep_max_passes", "threshold_full_sweep_condensation_reserve_passes"):
+            value, source, warning = _bounded_lcm_int_with_source(name, getattr(c, name))
+            setattr(c, name, value)
+            _record(name, source, warning)
 
         # Every other scalar LCM_* override is applied uniformly from the spec.
         for spec in ENV_FIELD_SPECS:

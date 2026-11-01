@@ -5210,6 +5210,8 @@ def lcm_status(args: Dict[str, Any], **kwargs) -> str:
             "threshold_full_sweep_enabled": engine._config.threshold_full_sweep_enabled,
             "summary_prefix_target_tokens": engine._config.summary_prefix_target_tokens,
             "threshold_full_sweep_max_passes": engine._config.threshold_full_sweep_max_passes,
+            "threshold_full_sweep_condensation_reserve_passes": (
+                engine._config.threshold_full_sweep_condensation_reserve_passes),
             "threshold_full_sweep_max_seconds": engine._foreground_budget_seconds()[1],
             "foreground_soft_seconds": engine._foreground_budget_seconds()[0],
             "context_threshold": engine._config.context_threshold,
