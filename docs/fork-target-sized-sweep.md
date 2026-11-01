@@ -1,8 +1,7 @@
 # Fork design: target-sized threshold sweep and idle-gap pre-compaction (G60)
 
-Status: design only. No code in this change. The sweep code (`compaction.py` `_condense_before_leaves`, the leaf
-loop, `_condense_after_leaves`, `config.py`) is being changed by T176 ("leave R passes for condensation"); the
-implementation of part 1 lands on top of the T176 commit. Base read: `origin/hermes` at `daa9e995` (T168).
+Status: part 1 is implemented on top of T176 (`8f6d1a03`, `3eabe55b`, the condensation reserve R); part 2 is
+design only. Part 1 is off by default (`LCM_SWEEP_TARGET_PROMPT_TOKENS=0`).
 
 Decisions from the owner (2026-11-02): (1) sweep until the next request fits a target size, bounded: required.
 (2) defer compaction until after the reply: not done (latency is accepted). (3) pre-compact while the session is idle:
@@ -25,65 +24,69 @@ for all eight bots.
 - There is no size target for the whole request. The only targets are the threshold (start) and
   `sweep_target_tokens` (the summary head, `compaction.py:2081-2089`).
 
-### Where the next request's size can be counted
+### The unit: host tokens, scaled by an observed ratio
 
-Next request = system prompt and tool schemas + summary head + raw tail (everything after the summaries, fresh tail
-included).
+The target is the provider's prompt size (what OCX and the API count: system prompt, tools and messages). LCM counts
+the same list with its own tokenizer (tiktoken cl100k, or a character estimate). On the Korean-heavy fleet sessions the
+two differ by a factor, not by a constant: hub-mac records give host 728,870 vs LCM 454,752 at one moment (1.60), and
+LCM 303k after a compaction vs 499k on the next request (1.65). Adding `_survival_host_overhead()` (observed minus
+counted) as a constant would treat the whole 274k gap as system prompt and keep it after the sweep, so the projection
+would be about 1.5x the real figure at the target. The sweep therefore uses a ratio:
 
-- Running estimate, free: `state.estimated_active_tokens`. It starts from the host's observed prompt tokens
-  (`compaction.py:2064-2068`), which already include the system prompt and tools, and each stored leaf subtracts
-  its source and adds its summary (`compaction.py:3063`; promoted leaves too). Condensation does **not** update it
-  today: the implementation must subtract `frontier_before - frontier_after` after each condensation pass
-  (`engine.py:9167` `_run_threshold_sweep_condensation` already reads both).
-- Exact figure, at the end: `count_messages_tokens(assembled context)` + host overhead. Host overhead (system prompt
-  + tools) is `_survival_host_overhead()` (`survival_fit.py:133-144`): observed prompt tokens minus the counted
-  messages, the binding's peak, capped at half the window.
-- Note: today's `tokens_after` in `lcm_status` (`compaction.py:2772`) is the message list only, without the host
-  overhead. The target must compare `tokens_after + host overhead`.
+- At sweep entry, `ratio = observed prompt tokens / LCM count of the same list` (`compaction.py`
+  `_prompt_token_ratio`). The observation is the host count compress() was given (the last request).
+- A ratio outside 0.5-4.0, or no observation, is unknown: no target decision is made, the sweep runs on its pass and
+  time bounds as with target 0, and `lcm_status` reports `prompt_token_ratio: null`.
+- Projection during leaves: `ratio x (LCM count at entry - tokens freed so far)`; the freed tokens come from the
+  running `estimated_active_tokens` (each stored leaf subtracts its source and adds its summary; pre-leaf
+  condensation subtracts the frontier it removed). The estimate leaves out how assembly renders summaries and
+  under-counts (about 3% in the unit test), so a fit by the estimate is confirmed on a no-write trial assembly
+  (`_assemble_committed_compaction_context(persist=False)`) before the leaves stop.
+- Reported figure: `projected_prompt_tokens_after = round(ratio x count(assembled context))`.
 
-### Proposed behavior
+### Implemented behavior
 
-New setting `LCM_SWEEP_TARGET_PROMPT_TOKENS` / `lcm.sweep_target_prompt_tokens` (int, `0` = off = today's
-behavior; proposed fleet value 150000 after replay). When it is set and the threshold sweep is active:
+With `LCM_SWEEP_TARGET_PROMPT_TOKENS` / `lcm.sweep_target_prompt_tokens` > 0 (0-4,000,000) and the threshold
+sweep active:
 
-1. Pre-leaf condensation as today (#653), within the T176 reserve.
-2. Leaves while `estimated_active_tokens > target`, passes left beyond T176's reserve R, and time left. A leaf pass
-   that brings the estimate to the target or below stops the leaves with `target_reached`. The fresh tail is never
-   cut; the leaf candidate rules are unchanged.
-3. Condensation runs when the head is over `sweep_target_tokens` **or** the estimate is still over the target, and
-   not only after `raw_prefix_drained`: with the reserved R passes plus any passes the leaves did not use.
-4. If the estimate is still over the target, raw history remains, and passes and time remain, go back to step 2 (one
-   more round). A round that stores nothing ends the sweep (`target_unreachable`: for example a fresh tail plus
-   system prompt larger than the target).
-5. Final stop reasons: `target_reached` (completed), `raw_prefix_drained`, `target_unreachable`,
-   `pass_budget_exhausted`, `time_budget_exhausted`, and the existing condensation reasons. Add
-   `target_prompt_tokens`, `projected_prompt_tokens_after` (exact figure above) and `rounds` to
-   `_last_threshold_full_sweep`.
+1. Pre-leaf condensation as before (#653, within the T176 bound).
+2. Leaves as before, plus one check after each stored leaf: when the projected request fits the target, the leaves stop
+   with `target_reached` (no further leaf call). The fresh tail and the leaf candidate rules are unchanged.
+3. Condensation after the leaves (post-drain, or T176's reserve after a capped leaf phase) condenses toward
+   `min(frontier target, frontier - LCM tokens the request is still over)` instead of the frontier target alone, so a
+   request still over the prompt target is condensed below the usual frontier target. Without a target or a ratio the
+   condensation target is unchanged.
+4. Final stop reason: `target_reached` when the projected request fits (unless a failure reason applies:
+   `summary_route_unavailable`, `summary_result_rejected`, `leaf_summary_error`, `condensation_error`);
+   otherwise the pass and time stops keep their reasons (`pass_budget_exhausted`, `time_budget_exhausted`,
+   `soft_target_reached`), and a sweep that drained the raw prefix and ran out of condensation material
+   (`raw_prefix_drained`, `summary_prefix_target_reached`, `condensation_no_progress`,
+   `no_same_depth_condensation_group`) while still over reports `target_unreachable` (partial).
+5. `lcm_status` `threshold_full_sweep` adds `target_prompt_tokens`, `prompt_token_ratio` and
+   `projected_prompt_tokens_after` only when the setting is > 0; with 0 the keys, the no-progress fingerprint and the
+   golden traces' events are unchanged.
 
-Merge with T176: T176's R is the condensation reserve inside the same total cap. The leaf loop's limit becomes
-`cap - pre_leaf_condensation_passes - R`; condensation gets `R + unused leaf passes`. With a target set, the reserve
-is spent only when the head or the estimate is over target, so a sweep that reached the target by leaves alone
-does not spend it.
+Not done: a second leaf round after condensation. The leaf phase ends with passes left only on `target_reached`
+(done), `raw_prefix_drained` (no raw left) or a time stop (no time left), so another leaf round has nothing to do in
+each case; condensation always runs after the leaves.
+
+Merge with T176: the reserve is kept as T176 built it (`_condense_within_sweep_reserve`, budget
+`min(R, cap - leaf calls - pre-leaf condensation)`); the target only lowers its `target_tokens`. Lifting the R cap
+would change nothing measurable: the leaf phase is capped at `cap - R` (promoted leaves extend it by one each), so the
+passes left after a capped leaf phase are exactly R. With R = 0 a capped leaf phase still makes no condensation, so the
+target arms need R > 0.
 
 ### Bounds
 
-- Pass cap: the existing `LCM_THRESHOLD_FULL_SWEEP_MAX_PASSES` (1-64). In target mode it is a ceiling, not a fixed
-  count. It must also stay at or below `LCM_SUMMARY_SPEND_MAX_CALLS` (default 24 per 600 s, `config.py:1221`), or the
-  spend guard stops the sweep and backs off for 1800 s.
-- Time cap: the existing `LCM_FOREGROUND_HARD_SECONDS` (default 120) and `LCM_FOREGROUND_SOFT_SECONDS` (default
-  60). The soft bound stops a sweep with `soft_target_reached`; raise both with the pass cap.
-- Host limits (Hermes `main` c627ec84, 2026-11-01; the deployed Hermes version was not checked):
-  - Compression wrapper: `compression.context_timeout_seconds` (idle, default 120, raised to at least the auxiliary
-    compression timeout) and `compression.context_total_ceiling_seconds` (default 600). A compaction still running at
-    the ceiling is discarded by the host (`agent/conversation_compression.py:1-8`,
-    `agent/conversation_compression_deadline.py:20-60`). LCM summaries already stored stay stored (nothing is lost;
-    the next turn resumes), but the turn gets the host's fallback. Keep `LCM_FOREGROUND_HARD_SECONDS` well under 600.
-  - Gateway turn inactivity watchdog: `agent.gateway_timeout` 1800 s (`gateway/run.py:2723`), warning at 900 s. The
-    host's compression heartbeat touches activity every 60 s during a compaction, so a sweep under 600 s does not trip
-    it.
-  - turn-guard (hub plugin) uses only `transform_tool_result` and `pre_llm_call` hooks (hermes-ops
-    `docs/design.md:346`); its source is on hub-mac and was not read here.
-- Proposed bounds for replay: cap 24, soft 180 s, hard 240 s.
+- Pass cap: `LCM_THRESHOLD_FULL_SWEEP_MAX_PASSES` (1-64), a ceiling in target mode. Keep it at or below
+  `LCM_SUMMARY_SPEND_MAX_CALLS` (fleet 24 per 600 s), or the spend guard stops the sweep and backs off for 1800 s.
+- Time: `LCM_FOREGROUND_SOFT_SECONDS` / `LCM_FOREGROUND_HARD_SECONDS` unchanged (fleet 480 / 600). A leaf call is
+  about 21 s on the fleet route (12 leaves in 272 s), so the soft bound admits about 22 calls.
+- Host limits (Hermes `main` c627ec84; the deployed version was not checked): the compression wrapper's total ceiling
+  `compression.context_total_ceiling_seconds` defaults to 600 s and discards a compaction still running then
+  (`agent/conversation_compression.py:1-8`); the fleet's LCM hard bound is already 600, so a sweep that uses all of it
+  can meet the host ceiling. Stored summaries stay stored either way (nothing is lost). The gateway inactivity timeout
+  is 1800 s and the host compression heartbeat touches activity every 60 s.
 
 ## 2. Idle-gap pre-compaction
 
@@ -125,19 +128,8 @@ $4.50 + $0.45, summary cost $0.48, net $4.47. Prices are inputs, not checked.
 
 ## Replay plan (hub-mac)
 
-Arms (same session, start at 0.7 x window = 700k):
-
-| Arm | `LCM_SWEEP_TARGET_PROMPT_TOKENS` | `LCM_THRESHOLD_FULL_SWEEP_MAX_PASSES` | `LCM_FOREGROUND_SOFT_SECONDS` / `HARD` |
-|---|---|---|---|
-| base | 0 | 14 | fleet values |
-| t120 | 120000 | 24 | 180 / 240 |
-| t150 | 150000 | 24 | 180 / 240 |
-| t200 | 200000 | 24 | 180 / 240 |
-
-Keep `LCM_SUMMARY_SPEND_MAX_CALLS` >= 24 for the target arms.
-
-Fields from `lcm_status` `threshold_full_sweep`: `stop_reason`, `leaf_passes`, `condensation_passes`,
-`pre_leaf_condensation_passes`, `total_passes`, `duration_ms`, `tokens_before`, `tokens_after`,
-`summary_prefix_tokens_before`, `summary_prefix_tokens_after`, `summary_prefix_target_tokens`, and after part 1
-`target_prompt_tokens`, `projected_prompt_tokens_after`, `rounds`. Summary calls and tokens: the summariser call
-log of the replay tool (count, input and output tokens per call).
+See the task report for the arm table at the fleet's current values. Fields: `lcm_status` `threshold_full_sweep`
+`stop_reason`, `status`, `leaf_passes`, `condensation_passes`, `pre_leaf_condensation_passes`,
+`reserve_condensation_passes`, `total_passes`, `duration_ms`, `tokens_before`, `tokens_after`,
+`summary_prefix_tokens_before`, `summary_prefix_tokens_after`, `target_prompt_tokens`, `prompt_token_ratio`,
+`projected_prompt_tokens_after`, and the next request's real prompt tokens from OCX.
