@@ -52,6 +52,16 @@ sweep active:
 1. Pre-leaf condensation as before (#653, within the T176 bound).
 2. Leaves as before, plus one check after each stored leaf: when the projected request fits the target, the leaves stop
    with `target_reached` (no further leaf call). The fresh tail and the leaf candidate rules are unchanged.
+   Between leaves: when the summary frontier is over its target, one condensation pass (same pass budget and
+   deadline, a leaf time reserve held as for pre-leaf condensation, one pass always left for the next leaf). The T176
+   hub-mac replay (cap 14, start host 728,870) gives the rates: a leaf frees about 8.5k LCM of the request and grows the
+   frontier by about 1.9k (R=0: 14 leaves, frontier 23,933 -> 50,621, request 274,359); a condensation removes about
+   7k of frontier (R=2: 37,016; R=3: 29,318). A fixed reserve trades one for the other: R=3 ends with the smallest
+   frontier but a request 24k larger than R=0. Choosing per step instead (leaf for the total, condensation when the
+   frontier is over target) keeps the frontier at its target at about one condensation per three to four leaves
+   (7k / 1.9k) and spends the rest on leaves. Interleaving is on with the setting (> 0) whether or not the ratio is
+   known; a rejected, failed or unavailable condensation stops it for the sweep, a missing same-depth group only
+   skips that step.
 3. Condensation after the leaves (post-drain, or T176's reserve after a capped leaf phase) condenses toward
    `min(frontier target, frontier - LCM tokens the request is still over)` instead of the frontier target alone, so a
    request still over the prompt target is condensed below the usual frontier target. Without a target or a ratio the
@@ -66,15 +76,16 @@ sweep active:
    `projected_prompt_tokens_after` only when the setting is > 0; with 0 the keys, the no-progress fingerprint and the
    golden traces' events are unchanged.
 
-Not done: a second leaf round after condensation. The leaf phase ends with passes left only on `target_reached`
+Not done: a separate second leaf round after the post-leaf condensation (interleaving covers it). The leaf phase ends with passes left only on `target_reached`
 (done), `raw_prefix_drained` (no raw left) or a time stop (no time left), so another leaf round has nothing to do in
 each case; condensation always runs after the leaves.
 
 Merge with T176: the reserve is kept as T176 built it (`_condense_within_sweep_reserve`, budget
 `min(R, cap - leaf calls - pre-leaf condensation)`); the target only lowers its `target_tokens`. Lifting the R cap
 would change nothing measurable: the leaf phase is capped at `cap - R` (promoted leaves extend it by one each), so the
-passes left after a capped leaf phase are exactly R. With R = 0 a capped leaf phase still makes no condensation, so the
-target arms need R > 0.
+passes left after a capped leaf phase are exactly R. With interleaving the frontier is held at its target during the
+leaves, so the reserve has little left to do and the target arms can run with R = 0. Interleaving does not depend on the
+ratio, so a sweep whose ratio is unknown still holds the frontier at its target.
 
 ### Bounds
 

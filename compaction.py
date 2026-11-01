@@ -132,6 +132,9 @@ class _CompressionState:
     sweep_prompt_ratio: float = 0.0
     sweep_lcm_tokens_before: int = 0
     sweep_estimate_start: int = 0
+    # G60: condensation passes run between leaves of a target sweep, and why interleaving stopped for this sweep.
+    interleaved_condensation_passes: int = 0
+    interleaved_condensation_stop_reason: str = ""
     pre_leaf_condensation_passes: int = 0
     pre_leaf_condensation_reason: str = ""
     dropped_replayed_scaffold_messages: bool = False
@@ -2682,6 +2685,55 @@ class CompactionMixin:
             state.working_messages, state.anchor_source_messages, state.recovery_assembly_cap, persist=False)
         return round(count_messages_tokens(trial) * state.sweep_prompt_ratio) <= target
 
+    def _condense_between_leaves(
+        self, state: _CompressionState,
+    ) -> tuple[Literal["next", "break", "return"], Optional[List[Dict[str, Any]]]]:
+        """G60: in a target sweep, one condensation pass after a leaf while the summary frontier is over its target.
+
+        A leaf frees the most of the request per call but grows the frontier; a condensation shrinks the frontier
+        (hub-mac replay: a leaf about -8.5k total and +1.9k frontier, a condensation about -7k frontier). Condensing
+        whenever the frontier is over target keeps it there while the leaves work on the total, about one
+        condensation per three to four leaves at those rates. Each pass comes out of the same pass budget and
+        deadline; one pass is always left for the next leaf."""
+        if (state.interleaved_condensation_stop_reason or state.leaf_passes + 1 >= state.max_leaf_passes
+                or self._summary_frontier_tokens() <= state.sweep_target_tokens
+                or not self._summary_route_available()):
+            return "next", None
+        before = self._summary_frontier_tokens()
+        state.budget.leaf_reserve = state.budget.estimate(self._primary_summary_route())
+        try:
+            passes, reason = self._run_threshold_sweep_condensation(
+                target_tokens=state.sweep_target_tokens, pass_budget=1, deadline=state.sweep_deadline,
+                focus_topic=state.focus_topic,
+            )
+        except Exception as exc:
+            if not _is_sqlite_locked_error(exc):
+                raise
+            return "return", self._fail_open_after_publication_failure(
+                self._assemble_committed_compaction_context(
+                    state.working_messages, state.anchor_source_messages, state.recovery_assembly_cap),
+                exc,
+                compress_started=state._compress_started,
+                threshold_full_sweep_active=state.threshold_full_sweep_active,
+                recovery_assembly_cap=state.recovery_assembly_cap,
+                leaf_passes=state.leaf_passes,
+                condensation_passes=(state.pre_leaf_condensation_passes + state.interleaved_condensation_passes
+                                     + int(getattr(exc, "lcm_completed_condensation_passes", 0))),
+                context_is_assembled=True,
+            )
+        finally:
+            state.budget.leaf_reserve = 0.0
+        state.interleaved_condensation_passes += passes
+        state.max_leaf_passes -= passes
+        if passes and state.sweep_prompt_ratio:
+            state.estimated_active_tokens -= max(0, before - self._summary_frontier_tokens())
+        if reason in {"time_budget_exhausted", "soft_target_reached"}:
+            state.sweep_stop_reason = reason
+            return "break", None
+        if reason in {"summary_route_unavailable", "summary_result_rejected", "condensation_error"}:
+            state.interleaved_condensation_stop_reason = reason  # no further interleaving in this sweep
+        return "next", None
+
     def _sweep_condensation_target(self, state: _CompressionState) -> int:
         """G60: the frontier size a sweep condenses toward. Without a target (or a known ratio) the sweep target;
         with one still over, the frontier less the LCM tokens the request is over, never above the sweep target."""
@@ -2703,7 +2755,8 @@ class CompactionMixin:
         (passes, stop reason); a frontier at or under target makes no call. The sweep deadline, the foreground
         soft/hard admission and the summary spend guard apply to every call as in any sweep condensation."""
         leaf_calls = max(0, state.leaf_passes - state.promoted_leaves)  # a promoted leaf made no model call
-        left = self._config.threshold_full_sweep_max_passes - leaf_calls - state.pre_leaf_condensation_passes
+        left = (self._config.threshold_full_sweep_max_passes - leaf_calls - state.pre_leaf_condensation_passes
+                - state.interleaved_condensation_passes)
         return self._run_threshold_sweep_condensation(
             target_tokens=state.sweep_target_tokens if target_tokens is None else target_tokens,
             pass_budget=max(0, min(state.sweep_condensation_reserve, left)),
@@ -2734,7 +2787,8 @@ class CompactionMixin:
                     remaining_passes = max(
                         0,
                         self._config.threshold_full_sweep_max_passes
-                        - state.leaf_passes - state.pre_leaf_condensation_passes,
+                        - state.leaf_passes - state.pre_leaf_condensation_passes
+                        - state.interleaved_condensation_passes,
                     )
                     state.condensation_passes, state.sweep_stop_reason = (
                         self._run_threshold_sweep_condensation(
@@ -2776,6 +2830,7 @@ class CompactionMixin:
             state.sweep_stop_reason == "summary_result_rejected"
             or state.pre_leaf_condensation_reason == "summary_result_rejected"
             or state.reserve_condensation_stop_reason == "summary_result_rejected"
+            or state.interleaved_condensation_stop_reason == "summary_result_rejected"
             or (not state.threshold_full_sweep_active  # _maybe_condense sets it fresh on this path only
                 and self._last_condensation_suppressed_reason == "summary_result_rejected")
         ):
@@ -2843,7 +2898,7 @@ class CompactionMixin:
         # edge cases (e.g. forced overflow recovery bypassing _assemble_context).
         compressed = self._sanitize_active_context_messages(compressed)
         if state.threshold_full_sweep_active:
-            total_passes = state.leaf_passes + state.pre_leaf_condensation_passes + state.condensation_passes
+            total_passes = state.leaf_passes + state.pre_leaf_condensation_passes + state.interleaved_condensation_passes + state.condensation_passes
             duration_ms = (time.perf_counter() - state._compress_started) * 1000.0
             final_stop_reason = state.sweep_stop_reason or "raw_prefix_drained"
             target_status: Dict[str, Any] = {}
@@ -2854,6 +2909,8 @@ class CompactionMixin:
                     "target_prompt_tokens": self._config.sweep_target_prompt_tokens,
                     "prompt_token_ratio": round(state.sweep_prompt_ratio, 4) if state.sweep_prompt_ratio else None,
                     "projected_prompt_tokens_after": projected,
+                    "interleaved_condensation_passes": state.interleaved_condensation_passes,
+                    "interleaved_condensation_stop_reason": state.interleaved_condensation_stop_reason,
                 }
                 if projected is not None and final_stop_reason not in _SWEEP_FAILURE_STOP_REASONS:
                     if projected <= self._config.sweep_target_prompt_tokens:
@@ -2866,7 +2923,8 @@ class CompactionMixin:
                 ),
                 "leaf_passes": state.leaf_passes,
                 **({"promoted_leaves": state.promoted_leaves} if state.promoted_leaves else {}),  # #787
-                "condensation_passes": state.pre_leaf_condensation_passes + state.condensation_passes,
+                "condensation_passes": (state.pre_leaf_condensation_passes + state.condensation_passes
+                                        + state.interleaved_condensation_passes),
                 "pre_leaf_condensation_passes": state.pre_leaf_condensation_passes,
                 "pre_leaf_condensation_stop_reason": state.pre_leaf_condensation_reason,
                 "post_drain_condensation_skipped": state.post_drain_condensation_skipped,
@@ -3210,6 +3268,10 @@ class CompactionMixin:
             if state.sweep_prompt_ratio and self._sweep_target_fits(state):
                 state.sweep_stop_reason = "target_reached"  # G60: the next request fits; no further leaf is needed
                 return "break", None
+            if self._config.sweep_target_prompt_tokens > 0:
+                action, result = self._condense_between_leaves(state)
+                if action != "next":
+                    return action, result
             leaf.leading_anchor_count = self._leading_anchor_count(state.working_messages)
             remaining_fresh_tail_start = self._fresh_tail_start(state.working_messages)
             remaining_raw = state.working_messages[

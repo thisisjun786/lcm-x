@@ -18,7 +18,9 @@ from hermes_lcm.tokens import count_messages_tokens
 
 FIELD = "sweep_target_prompt_tokens"
 ENV = "LCM_SWEEP_TARGET_PROMPT_TOKENS"
-TARGET_KEYS = {"target_prompt_tokens", "prompt_token_ratio", "projected_prompt_tokens_after"}
+TARGET_KEYS = {"target_prompt_tokens", "prompt_token_ratio", "projected_prompt_tokens_after",
+               "interleaved_condensation_passes", "interleaved_condensation_stop_reason"}
+WIDE_FRONTIER = {"summary_prefix_target_tokens": 100000}  # the frontier never passes it: no condensation between leaves
 
 
 @pytest.fixture(autouse=True)
@@ -76,6 +78,9 @@ class _Clock:
         return self._real() + self.offset
 
 
+order: list = []  # model calls of the last _sweep, in order: "L" leaf, "C" condensation
+
+
 def _messages():
     messages = [{"role": "system", "content": "system"}]
     for index in range(20):
@@ -86,7 +91,8 @@ def _messages():
     return messages
 
 
-def _sweep(tmp_path, monkeypatch, *, ratio=1.6, host_tokens=None, advance_on_leaf=None, clock=None, **overrides):
+def _sweep(tmp_path, monkeypatch, *, ratio=1.6, host_tokens=None, advance_on_leaf=None, clock=None, condense=None,
+           **overrides):
     """20 raw rows of ~250 LCM tokens, one-message leaves with a short summary, so every leaf frees ~245 tokens.
     The host count is ``ratio`` x the LCM count unless ``host_tokens`` is given. Returns (sweep telemetry,
     lcm_status, LCM count at entry, condensation model calls)."""
@@ -109,21 +115,24 @@ def _sweep(tmp_path, monkeypatch, *, ratio=1.6, host_tokens=None, advance_on_lea
     messages = _messages()
     lcm_tokens = count_messages_tokens(messages)
     leaf_calls, condensation_calls = 0, []
+    order.clear()
 
     def fake_leaf(chunk, focus_topic=None, deadline=None):
         nonlocal leaf_calls
         del focus_topic, deadline
         leaf_calls += 1
+        order.append("L")
         if advance_on_leaf is not None and leaf_calls == advance_on_leaf:
             clock.offset += 61.0  # past the 60 s soft target, inside the 120 s hard bound
         return chunk, count_messages_tokens(chunk), "leaf summary of the turn", 1, 0
 
     def fake_condensation(**kwargs):
         condensation_calls.append(kwargs.get("source_tokens"))
+        order.append("C")
         return "Condensed.", 1
 
     monkeypatch.setattr(engine, "_summarize_leaf_chunk_with_rescue", fake_leaf)
-    monkeypatch.setattr(lcm_engine, "summarize_with_escalation", fake_condensation)
+    monkeypatch.setattr(lcm_engine, "summarize_with_escalation", condense or fake_condensation)
     try:
         observed = host_tokens if host_tokens is not None else int(lcm_tokens * ratio)
         engine.compress(messages, current_tokens=observed)
@@ -151,7 +160,7 @@ def test_target_0_is_the_sweep_of_today(tmp_path, monkeypatch):
 def test_leaves_stop_once_the_projected_request_fits_the_target(tmp_path, monkeypatch):
     lcm_tokens = count_messages_tokens(_messages())
     target = int(lcm_tokens * 1.6) - 600  # about two leaves of host tokens
-    telemetry, status, _lcm, _calls = _sweep(tmp_path, monkeypatch, sweep_target_prompt_tokens=target)
+    telemetry, status, _lcm, _calls = _sweep(tmp_path, monkeypatch, sweep_target_prompt_tokens=target, **WIDE_FRONTIER)
     assert telemetry["stop_reason"] == "target_reached"
     assert telemetry["status"] == "completed"
     assert 1 <= telemetry["leaf_passes"] < 6
@@ -168,13 +177,13 @@ def test_the_ratio_scales_the_decision(tmp_path, monkeypatch):
     """The same target is reached after fewer leaves when host tokens per LCM token are fewer."""
     lcm_tokens = count_messages_tokens(_messages())
     target = int(lcm_tokens * 1.6) - 600
-    high, *_ = _sweep(tmp_path / "high", monkeypatch, ratio=1.6, sweep_target_prompt_tokens=target)
-    low, *_ = _sweep(tmp_path / "low", monkeypatch, ratio=1.55, sweep_target_prompt_tokens=target)
+    high, *_ = _sweep(tmp_path / "high", monkeypatch, ratio=1.6, sweep_target_prompt_tokens=target, **WIDE_FRONTIER)
+    low, *_ = _sweep(tmp_path / "low", monkeypatch, ratio=1.55, sweep_target_prompt_tokens=target, **WIDE_FRONTIER)
     assert low["leaf_passes"] < high["leaf_passes"]
 
 
 def test_a_target_out_of_reach_stops_on_the_pass_budget(tmp_path, monkeypatch):
-    telemetry, _status, _lcm, _calls = _sweep(tmp_path, monkeypatch, sweep_target_prompt_tokens=1)
+    telemetry, _status, _lcm, _calls = _sweep(tmp_path, monkeypatch, sweep_target_prompt_tokens=1, **WIDE_FRONTIER)
     assert telemetry["leaf_passes"] == 6
     assert telemetry["stop_reason"] == "pass_budget_exhausted"
     assert telemetry["status"] == "partial"
@@ -185,7 +194,7 @@ def test_a_target_out_of_reach_stops_on_time(tmp_path, monkeypatch):
     clock = _Clock()
     monkeypatch.setattr(time, "monotonic", clock)
     telemetry, _status, _lcm, _calls = _sweep(
-        tmp_path, monkeypatch, advance_on_leaf=2, clock=clock, sweep_target_prompt_tokens=1)
+        tmp_path, monkeypatch, advance_on_leaf=2, clock=clock, sweep_target_prompt_tokens=1, **WIDE_FRONTIER)
     assert telemetry["leaf_passes"] == 2
     assert telemetry["stop_reason"] in {"soft_target_reached", "time_budget_exhausted"}
 
@@ -195,7 +204,7 @@ def test_no_usable_ratio_means_no_target_decision(tmp_path, monkeypatch, host_to
     """No host count, or one ten times the LCM count (a stale observation), leaves only the pass and time bounds."""
     lcm_tokens = count_messages_tokens(_messages())
     observed = lcm_tokens * 10 if host_tokens == "tenfold" else 0
-    engine_threshold_kwargs = {"sweep_target_prompt_tokens": lcm_tokens}  # would be reached at once with a ratio
+    engine_threshold_kwargs = {"sweep_target_prompt_tokens": lcm_tokens, **WIDE_FRONTIER}  # would be reached at once with a ratio
     telemetry, _status, _lcm, _calls = _sweep(tmp_path, monkeypatch, host_tokens=observed, **engine_threshold_kwargs)
     assert telemetry["prompt_token_ratio"] is None and telemetry["projected_prompt_tokens_after"] is None
     assert telemetry["leaf_passes"] == 6
@@ -227,3 +236,32 @@ def test_nothing_left_to_summarise_or_condense_is_target_unreachable(tmp_path, m
     assert telemetry["total_passes"] < 64
     assert telemetry["stop_reason"] == "target_unreachable"
     assert telemetry["status"] == "partial"
+
+
+def test_a_target_sweep_condenses_between_leaves_while_the_frontier_is_over_target(tmp_path, monkeypatch):
+    """The frontier target here is 1 token, so every stored leaf leaves it over: condensations run between leaves
+    (when two same-depth nodes exist) inside the same 6-call budget, and the frontier ends smaller than with leaves
+    only."""
+    base, *_rest = _sweep(tmp_path / "base", monkeypatch)
+    base_order = list(order)
+    telemetry, _status, _lcm, calls = _sweep(tmp_path / "target", monkeypatch, sweep_target_prompt_tokens=1)
+    target_order = list(order)
+    assert base_order == ["L"] * 6 and base["condensation_passes"] == 0
+    assert target_order[0] == "L" and target_order[-1] == "L" and "C" in target_order
+    assert telemetry["interleaved_condensation_passes"] == len(calls) == target_order.count("C") >= 1
+    assert telemetry["condensation_passes"] == telemetry["interleaved_condensation_passes"]
+    assert telemetry["total_passes"] == len(target_order) <= 6
+    assert telemetry["summary_prefix_tokens_after"] < base["summary_prefix_tokens_after"]
+    assert telemetry["stop_reason"] == "pass_budget_exhausted"
+
+
+def test_a_rejected_condensation_between_leaves_stops_interleaving_for_the_sweep(tmp_path, monkeypatch):
+    def rejected(**kwargs):
+        order.append("C")
+        raise lcm_engine.SummaryResultRejected("summary result rejected at level 3")
+
+    telemetry, *_rest = _sweep(tmp_path, monkeypatch, condense=rejected, sweep_target_prompt_tokens=1)
+    assert order.count("C") == 1
+    assert telemetry["interleaved_condensation_passes"] == 0
+    assert telemetry["interleaved_condensation_stop_reason"] == "summary_result_rejected"
+    assert telemetry["leaf_passes"] == 6
