@@ -2623,6 +2623,8 @@ class LCMEngine(
                      [getattr(self._config, name) for name in names]]
             if self._config.threshold_full_sweep_condensation_reserve_passes:  # T176: 0 keeps the earlier proof
                 state.append(self._config.threshold_full_sweep_condensation_reserve_passes)
+            if self._config.sweep_target_prompt_tokens:  # G60: 0 keeps the earlier proof
+                state.append(["sweep_target_prompt_tokens", self._config.sweep_target_prompt_tokens])
             return hashlib.sha256(json.dumps(state, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
         except Exception:
             self._no_progress_metadata_warning()

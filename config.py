@@ -468,6 +468,7 @@ _SUPPORTED_LCM_CONFIG_YAML_KEYS = {
     "embedding_query_prefix", "embedding_document_prefix",
     "threshold_full_sweep_max_passes",
     "threshold_full_sweep_condensation_reserve_passes",
+    "sweep_target_prompt_tokens",
 }
 
 
@@ -735,6 +736,7 @@ _ENV_RANGES = {
     # Enforced: a value outside the range is ignored (see _bounded_lcm_int_with_source).
     "threshold_full_sweep_max_passes": (1, 64, True),
     "threshold_full_sweep_condensation_reserve_passes": (0, 16, True),
+    "sweep_target_prompt_tokens": (0, 4_000_000, True),
 }
 
 
@@ -867,6 +869,7 @@ ENV_FIELD_SPECS: tuple[_EnvFieldSpec, ...] = (
     _EnvFieldSpec("threshold_full_sweep_max_passes", "LCM_THRESHOLD_FULL_SWEEP_MAX_PASSES", int),
     _EnvFieldSpec("threshold_full_sweep_condensation_reserve_passes",
                   "LCM_THRESHOLD_FULL_SWEEP_CONDENSATION_RESERVE_PASSES", int),
+    _EnvFieldSpec("sweep_target_prompt_tokens", "LCM_SWEEP_TARGET_PROMPT_TOKENS", int),
     _EnvFieldSpec("summary_prefix_target_tokens", "LCM_SUMMARY_PREFIX_TARGET_TOKENS", int),
     _EnvFieldSpec("preserved_objective_max_chars", "LCM_PRESERVED_OBJECTIVE_MAX_CHARS", int),
     _EnvFieldSpec("foreground_soft_seconds", "LCM_FOREGROUND_SOFT_SECONDS", float),
@@ -1012,6 +1015,7 @@ _SOURCE_TRACKED_ENV_FIELDS = frozenset({
     "stub_first_exit_target_ratio",
     "threshold_full_sweep_max_passes",
     "threshold_full_sweep_condensation_reserve_passes",
+    "sweep_target_prompt_tokens",
 })
 
 # Fields exposed as runtime preset overrides (consumed by presets.py).
@@ -1093,6 +1097,9 @@ class LCMConfig:
     # Of those, passes kept for condensation when the leaf work hits the budget; 0-16, 0 = off.
     # Env LCM_THRESHOLD_FULL_SWEEP_CONDENSATION_RESERVE_PASSES, then lcm.threshold_full_sweep_condensation_reserve_passes.
     threshold_full_sweep_condensation_reserve_passes: int = 0
+    # Host-counted prompt size a threshold sweep works toward (0 = off: today's sweep); 0-4,000,000.
+    # Env LCM_SWEEP_TARGET_PROMPT_TOKENS, then config.yaml lcm.sweep_target_prompt_tokens.
+    sweep_target_prompt_tokens: int = 0
     # Target frontier-summary size after a sweep (0 = one leaf budget, capped at a quarter of the compaction threshold).
     summary_prefix_target_tokens: int = 0
     # Characters of the user's own words carried in the preserved-objective scaffold after compaction;
@@ -1641,7 +1648,8 @@ class LCMConfig:
                        "(must be >= 0 and <= 1)")
             c.stub_first_exit_target_ratio, source = LCMConfig.stub_first_exit_target_ratio, "default"
         _record("stub_first_exit_target_ratio", source, warning)
-        for name in ("threshold_full_sweep_max_passes", "threshold_full_sweep_condensation_reserve_passes"):
+        for name in ("threshold_full_sweep_max_passes", "threshold_full_sweep_condensation_reserve_passes",
+                     "sweep_target_prompt_tokens"):
             value, source, warning = _bounded_lcm_int_with_source(name, getattr(c, name))
             setattr(c, name, value)
             _record(name, source, warning)

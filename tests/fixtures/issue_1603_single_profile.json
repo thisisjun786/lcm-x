@@ -172,6 +172,7 @@
       "summary_spend_max_calls": "env:LCM_SUMMARY_SPEND_MAX_CALLS",
       "threshold_full_sweep_max_passes": "default",
       "threshold_full_sweep_condensation_reserve_passes": "default",
+      "sweep_target_prompt_tokens": "default",
       "summary_spend_window_seconds": "env:LCM_SUMMARY_SPEND_WINDOW_SECONDS",
       "summary_timeout_ms": "env:LCM_SUMMARY_TIMEOUT_MS"
     },
@@ -315,6 +316,7 @@
     "temporal_rollups_enabled": true,
     "threshold_full_sweep_enabled": true,
     "threshold_full_sweep_max_passes": 12,
-    "threshold_full_sweep_condensation_reserve_passes": 0
+    "threshold_full_sweep_condensation_reserve_passes": 0,
+    "sweep_target_prompt_tokens": 0
   }
 }

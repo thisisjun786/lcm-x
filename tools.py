@@ -5212,6 +5212,7 @@ def lcm_status(args: Dict[str, Any], **kwargs) -> str:
             "threshold_full_sweep_max_passes": engine._config.threshold_full_sweep_max_passes,
             "threshold_full_sweep_condensation_reserve_passes": (
                 engine._config.threshold_full_sweep_condensation_reserve_passes),
+            "sweep_target_prompt_tokens": engine._config.sweep_target_prompt_tokens,
             "threshold_full_sweep_max_seconds": engine._foreground_budget_seconds()[1],
             "foreground_soft_seconds": engine._foreground_budget_seconds()[0],
             "context_threshold": engine._config.context_threshold,

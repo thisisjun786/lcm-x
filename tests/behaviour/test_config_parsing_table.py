@@ -139,6 +139,7 @@ CONFIG_ROWS = (
     ('threshold_full_sweep_max_passes', 'LCM_THRESHOLD_FULL_SWEEP_MAX_PASSES', 'int', 12),
     ('threshold_full_sweep_condensation_reserve_passes', 'LCM_THRESHOLD_FULL_SWEEP_CONDENSATION_RESERVE_PASSES',
      'int', 0),
+    ('sweep_target_prompt_tokens', 'LCM_SWEEP_TARGET_PROMPT_TOKENS', 'int', 0),
     # config._parse_str_env -> LCMConfig.from_env (construction time).
     ('custom_instructions', 'LCM_CUSTOM_INSTRUCTIONS', 'str', ''),
     ('extraction_model', 'LCM_EXTRACTION_MODEL', 'str', ''),
@@ -189,6 +190,7 @@ SPECIAL = {
     "stub_first_exit_target_ratio": (D, D, D, D, 1.0, 0.0, D, D, D, D, D, D, D, D, 0.5, D),
     "threshold_full_sweep_max_passes": (D, D, D, D, 1, D, D, D, D, D, D, D, D, D, D, D),  # 1-64 only
     "threshold_full_sweep_condensation_reserve_passes": (D, D, D, D, 1, 0, D, D, D, D, D, D, D, D, D, D),  # 0-16
+    "sweep_target_prompt_tokens": (D, D, D, D, 1, 0, D, D, D, D, D, D, D, D, D, D),  # 0-4,000,000
 }
 
 
