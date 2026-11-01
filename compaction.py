@@ -106,6 +106,8 @@ class _CompressionState:
     critical_budget_pressure: bool = False
     deferred_maintenance_active: bool = False
     max_leaf_passes: int = 0
+    sweep_condensation_reserve: int = 0  # T176: passes kept for condensation after a capped leaf phase
+    reserve_condensation_stop_reason: str = ""
     pre_leaf_condensation_passes: int = 0
     pre_leaf_condensation_reason: str = ""
     dropped_replayed_scaffold_messages: bool = False
@@ -2137,7 +2139,12 @@ class CompactionMixin:
         base_max_leaf_passes = 4 if self._config.dynamic_leaf_chunk_enabled else 1
         state.max_leaf_passes = base_max_leaf_passes
         if state.threshold_full_sweep_active:
-            state.max_leaf_passes = self._config.threshold_full_sweep_max_passes
+            # T176: at most max_passes - 1, so the leaf phase keeps at least one pass.
+            state.sweep_condensation_reserve = min(
+                self._config.threshold_full_sweep_condensation_reserve_passes,
+                self._config.threshold_full_sweep_max_passes - 1,
+            )
+            state.max_leaf_passes = self._config.threshold_full_sweep_max_passes - state.sweep_condensation_reserve
         if state.deferred_maintenance_active:
             state.max_leaf_passes = max(1, self._config.deferred_maintenance_max_passes)
         return "next", None
@@ -2157,7 +2164,8 @@ class CompactionMixin:
                 state.pre_leaf_condensation_passes, state.pre_leaf_condensation_reason = (
                     self._run_threshold_sweep_condensation(
                         target_tokens=state.sweep_target_tokens,
-                        pass_budget=self._config.threshold_full_sweep_max_passes - 1,
+                        pass_budget=(self._config.threshold_full_sweep_max_passes - 1
+                                     - state.sweep_condensation_reserve),
                         deadline=state.sweep_deadline,
                         focus_topic=focus_topic,
                     )
@@ -2628,6 +2636,24 @@ class CompactionMixin:
         return "next", None
 
 
+    def _condense_within_sweep_reserve(
+        self, state: _CompressionState, focus_topic: Optional[str] = None, *, target_tokens: Optional[int] = None,
+    ) -> tuple[int, str]:
+        """T176: condense the summary frontier within the passes a capped leaf phase kept for it.
+
+        The budget is the reserve, bounded by what the sweep's pass budget still allows after the leaf model calls
+        and the pre-leaf condensation. It runs toward ``target_tokens`` (the sweep target by default) and returns
+        (passes, stop reason); a frontier at or under target makes no call. The sweep deadline, the foreground
+        soft/hard admission and the summary spend guard apply to every call as in any sweep condensation."""
+        leaf_calls = max(0, state.leaf_passes - state.promoted_leaves)  # a promoted leaf made no model call
+        left = self._config.threshold_full_sweep_max_passes - leaf_calls - state.pre_leaf_condensation_passes
+        return self._run_threshold_sweep_condensation(
+            target_tokens=state.sweep_target_tokens if target_tokens is None else target_tokens,
+            pass_budget=max(0, min(state.sweep_condensation_reserve, left)),
+            deadline=state.sweep_deadline,
+            focus_topic=focus_topic,
+        )
+
     def _condense_after_leaves(
         self, state: _CompressionState, focus_topic: Optional[str], warn_rejected: Callable[[], None],
     ) -> tuple[Literal["next", "return"], Optional[List[Dict[str, Any]]]]:
@@ -2661,6 +2687,11 @@ class CompactionMixin:
                             focus_topic=focus_topic,
                         )
                     )
+                elif state.sweep_condensation_reserve and state.sweep_stop_reason == "pass_budget_exhausted":
+                    # T176: the sweep's stop reason stays the leaf stop; this run's reason is reported on its own.
+                    state.condensation_passes, state.reserve_condensation_stop_reason = (
+                        self._condense_within_sweep_reserve(state, focus_topic)
+                    )
             else:
                 state.condensation_passes = self._maybe_condense(
                     focus_topic=focus_topic,
@@ -2686,6 +2717,7 @@ class CompactionMixin:
         if (
             state.sweep_stop_reason == "summary_result_rejected"
             or state.pre_leaf_condensation_reason == "summary_result_rejected"
+            or state.reserve_condensation_stop_reason == "summary_result_rejected"
             or (not state.threshold_full_sweep_active  # _maybe_condense sets it fresh on this path only
                 and self._last_condensation_suppressed_reason == "summary_result_rejected")
         ):
@@ -2766,6 +2798,12 @@ class CompactionMixin:
                 "pre_leaf_condensation_passes": state.pre_leaf_condensation_passes,
                 "pre_leaf_condensation_stop_reason": state.pre_leaf_condensation_reason,
                 "post_drain_condensation_skipped": state.post_drain_condensation_skipped,
+                **({  # T176: only with a reserve, so a sweep without one reports what it did before
+                    "condensation_reserve_passes": state.sweep_condensation_reserve,
+                    "reserve_condensation_passes": (
+                        state.condensation_passes if state.reserve_condensation_stop_reason else 0),
+                    "reserve_condensation_stop_reason": state.reserve_condensation_stop_reason,
+                } if state.sweep_condensation_reserve else {}),
                 "total_passes": total_passes,
                 "duration_ms": round(duration_ms, 3),
                 "tokens_before": self._last_threshold_full_sweep["tokens_before"],

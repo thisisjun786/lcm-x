@@ -2621,6 +2621,8 @@ class LCMEngine(
                      yield_ready,
                      route,
                      [getattr(self._config, name) for name in names]]
+            if self._config.threshold_full_sweep_condensation_reserve_passes:  # T176: 0 keeps the earlier proof
+                state.append(self._config.threshold_full_sweep_condensation_reserve_passes)
             return hashlib.sha256(json.dumps(state, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
         except Exception:
             self._no_progress_metadata_warning()
