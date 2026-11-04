@@ -88,6 +88,7 @@ class _CompressionState:
     below_threshold_cleanup_only_requested: bool = False
     automatic_preflight_requested: bool = False
     hold_fit_only_requested: bool = False
+    cold_gap_requested: bool = False
     _compress_started: float = 0.0
     observed_prompt_tokens: Optional[int] = None
     force_overflow: bool = False
@@ -256,6 +257,7 @@ class CompactionMixin:
         self._compaction_request.cleanup_only_due_to_boundary_cooldown = False
         self._compaction_request.below_threshold_cleanup_only = False
         self._compaction_request.automatic_request = False
+        self._compaction_request.cold_gap = False
         self._maybe_reclassify_late_auxiliary_before_compaction_write()
         if self._bypasses_lcm_context_management():
             # Bypassed traffic observes nothing about the pressured session's
@@ -357,6 +359,8 @@ class CompactionMixin:
                 ):
                     self._compaction_request.cleanup_only_due_to_boundary_cooldown = True
                 if not force_overflow_requested and max(rough, replay_rough) < self.threshold_tokens:
+                    if self._cold_gap_compaction_due(max(rough, replay_rough), ingested=True):
+                        return self._mark_preflight_compression_requested()
                     return self._mark_below_threshold_maintenance()
                 return self._mark_preflight_compression_requested()
             if force_overflow_requested:
@@ -374,6 +378,8 @@ class CompactionMixin:
                 and self._sweep_budget_hold_applies(max(rough, replay_rough, self.last_prompt_tokens or 0))
             ):
                 return False
+            if self._cold_gap_compaction_due(max(rough, replay_rough), ingested=True):
+                return self._mark_preflight_compression_requested()
             if pre_ingest_placeholder_cleanup_requested:
                 return self._mark_preflight_compression_requested(
                     depends_on_pressure_yield=True,
@@ -466,6 +472,8 @@ class CompactionMixin:
             self._last_compression_noop_reason = reason
             logger.info("LCM preflight compression no-op: %s", reason)
             return False
+        if self._cold_gap_compaction_due(rough, ingested=replay_messages is not None):
+            return self._mark_preflight_compression_requested()
         self._refresh_raw_backlog_debt(messages, observed_tokens=rough)
         # With critical pressure disabled, routine debt remains recorded until
         # another required preflight trigger is reached.
@@ -478,6 +486,88 @@ class CompactionMixin:
         ):
             return self._mark_below_threshold_maintenance()
         return False
+
+    def _cold_gap_compaction_due(self, tokens: int, *, ingested: bool) -> bool:
+        """Fork cold-gap trigger: True (and the one-shot ``cold_gap`` request set) when this managed conversation is
+        below the threshold, its last provider call is at least ``cold_gap_compaction_seconds`` old, that call's
+        provider-reported prompt reached ``cold_gap_min_prompt_tokens``, no hold/cooldown/closed route applies, and
+        no cold-gap compaction was requested yet for that same last call (durable, so once per idle gap)."""
+        gap_setting = int(self._config.cold_gap_compaction_seconds or 0)
+        if gap_setting <= 0 or self.threshold_tokens <= 0 or int(tokens or 0) >= self.threshold_tokens:
+            return False
+        conversation_id = self._conversation_id
+        if not ingested or not conversation_id or self._bypasses_lcm_context_management():
+            return False
+        if (self._compression_boundary_cooldown_active() or self._sweep_budget_hold_active()
+                or self._no_progress_hold_active(managed_scope=True) or not self._summary_route_available()):
+            return False
+        telemetry = self._store.read_compaction_telemetry(conversation_id) or {}
+        last_call_at = telemetry.get("last_api_call_at")
+        if isinstance(last_call_at, bool) or not isinstance(last_call_at, (int, float)):
+            return False
+        now = time.time()
+        gap = now - float(last_call_at)
+        if gap < gap_setting:
+            return False
+        observed = int(telemetry.get("last_observed_prompt_tokens") or 0) or int(self.last_prompt_tokens or 0)
+        min_tokens = int(self._config.cold_gap_min_prompt_tokens)
+        if observed < min_tokens:
+            return False
+        key = self._cold_gap_metadata_key(conversation_id)
+        record = self._store.read_metadata_json(key)
+        record = record if isinstance(record, dict) else {}
+        if record.get("fired_for_last_api_call_at") == last_call_at:
+            return False
+        event = {"requested_at": now, "gap_seconds": round(gap, 1), "observed_prompt_tokens": observed,
+                 "leaf_passes": None, "tokens_before": None, "tokens_after": None, "duration_ms": None,
+                 "stop_reason": "requested"}
+        self._store.write_metadata_json(
+            [key], json.dumps({"fired_for_last_api_call_at": last_call_at, "last_event": event}, sort_keys=True))
+        self._compaction_request.cold_gap = True
+        logger.info("LCM cold-gap compaction requested: gap=%ds observed_prompt_tokens=%d min=%d threshold=%d",
+                    int(gap), observed, min_tokens, int(self.threshold_tokens))
+        return True
+
+    @staticmethod
+    def _cold_gap_metadata_key(conversation_id: str) -> str:
+        return f"cold_gap_compaction:{conversation_id}"
+
+    def _record_cold_gap_result(self, budget: ForegroundBudget, messages: List[Dict[str, Any]], result: Any,
+                                started: float) -> None:
+        """Fill the requested cold-gap event with this pass's outcome (best effort, diagnostic only)."""
+        try:
+            conversation_id = self._conversation_id
+            key = self._cold_gap_metadata_key(conversation_id)
+            record = self._store.read_metadata_json(key)
+            if not conversation_id or not isinstance(record, dict) or not isinstance(record.get("last_event"), dict):
+                return
+            sweep = self._last_threshold_full_sweep if budget.sweep_active else {}
+            after = result if isinstance(result, list) else messages
+            record["last_event"].update(
+                leaf_passes=int(sweep.get("leaf_passes", budget.leaves) if sweep else budget.leaves),
+                tokens_before=sweep.get("tokens_before") if sweep else count_messages_tokens(messages),
+                tokens_after=sweep.get("tokens_after") if sweep else count_messages_tokens(after),
+                duration_ms=round((time.perf_counter() - started) * 1000.0, 3),
+                stop_reason=("error" if self._last_compression_status == "error" else
+                             str(sweep.get("stop_reason") or "") if sweep else "")
+                or str(self._last_compression_status or "unknown"),
+            )
+            self._store.write_metadata_json([key], json.dumps(record, sort_keys=True))
+        except Exception:
+            logger.debug("LCM cold-gap event update failed", exc_info=True)
+
+    def _cold_gap_status(self) -> dict:
+        """lcm_status: the cold-gap settings and this conversation's last cold-gap event."""
+        event = None
+        try:
+            if self._conversation_id:
+                record = self._store.read_metadata_json(self._cold_gap_metadata_key(self._conversation_id))
+                if isinstance(record, dict) and isinstance(record.get("last_event"), dict):
+                    event = dict(record["last_event"])
+        except Exception:
+            logger.debug("LCM cold-gap status read failed", exc_info=True)
+        return {"seconds": int(self._config.cold_gap_compaction_seconds),
+                "min_prompt_tokens": int(self._config.cold_gap_min_prompt_tokens), "last_event": event}
 
     def _mark_below_threshold_maintenance(self, **kwargs: Any) -> bool:
         """#651: a request below the host threshold is maintenance; the automatic compress() it asks for is
@@ -726,10 +816,12 @@ class CompactionMixin:
         self._last_compression_noop_reason = ""  # #1162: a fit's cause belongs to this pass
         _summary_call.error = None  # the thread-local summary failure must not outlive its pass
         budget = self._foreground_budget = self._new_foreground_budget()  # #605 K1: the clock starts here
+        budget_started = time.perf_counter()
         thread_context = getattr(self, "_thread_context", None)  # D5: per thread; the engine is shared with live children
         if thread_context is not None:
             thread_context.foreground_budget = budget
         returned = None
+        cold_gap_pass = False
         try:
             budget.pre_leaf = PhaseSqlTrace()  # #1127: timed until the first leaf call, or the stop before one
             budget.pre_leaf.install([(self._store, "_conn"), (self._store, "_write_lock"), (self._dag, "_conn"),
@@ -742,6 +834,12 @@ class CompactionMixin:
             self._no_progress_proof_complete = False
             self._stub_first_exit_now = self._last_stub_first_exit = None  # #671: the latest compaction only
             self._compress_calls += 1  # #1116: a stub-first proof becomes durable only for the latest call
+            # Fork cold gap: a pass preflight requested after an idle gap; never a forced or recovery pass.
+            # At or over the threshold the pass is today's threshold pass, holds included.
+            cold_gap_pass = bool(self._compaction_request.cold_gap and not force and not bypass_cooldown and (
+                current_tokens if current_tokens is not None else count_messages_tokens(messages)
+            ) < self.threshold_tokens)
+            self._compaction_request.cold_gap = cold_gap_pass
             if bypass_cooldown:  # #651: a host recovery attempt is never cleanup-only maintenance
                 self._compaction_request.below_threshold_cleanup_only = self._compaction_request.automatic_request = False
                 # #684: nor held by a boundary cooldown.
@@ -792,7 +890,7 @@ class CompactionMixin:
                 sanitized = self._sanitize_active_context_messages(messages)
                 result = messages if sanitized == messages else sanitized
                 self._ingest_cursor = len(result)
-                if not force and not bypass_cooldown and not self._compress_forced_overflow:
+                if not force and not bypass_cooldown and not self._compress_forced_overflow and not cold_gap_pass:
                     self._start_no_progress_hold("hidden_only")
                 logger.info("LCM hidden-only compaction kept host list unchanged: leaves=%d hidden_rows=%d",
                             budget.leaves, self._compress_hidden_rows_consumed)
@@ -806,7 +904,7 @@ class CompactionMixin:
                     budget.progress = ""
                     self._last_compression_noop_reason = "published leaf did not shrink the returned context"
                     self._no_progress_candidate = True
-            pending_no_progress = (self._no_progress_candidate and not bypass_cooldown
+            pending_no_progress = (self._no_progress_candidate and not bypass_cooldown and not cold_gap_pass
                     and self._last_compression_status != "error" and len(result) >= len(messages)) and (
                     count_messages_tokens(result) >= count_messages_tokens(messages))
             self._record_compress_commit_proof(messages, result)
@@ -848,6 +946,8 @@ class CompactionMixin:
                     return fitted
             raise
         finally:
+            if cold_gap_pass:
+                self._record_cold_gap_result(budget, messages, returned, budget_started)
             self._end_pre_leaf_phase(budget, "stopped")
             self._last_compress_leaves = (self._hold_conversation_key(), budget.leaves)
             self._compress_forced_overflow = False
@@ -1860,6 +1960,8 @@ class CompactionMixin:
         )
         state.automatic_preflight_requested = bool(self._compaction_request.automatic_request)
         state.hold_fit_only_requested = bool(self._compaction_request.hold_fit_only_requested)
+        state.cold_gap_requested = bool(self._compaction_request.cold_gap and not force)
+        self._compaction_request.cold_gap = False
         self._compaction_request.cleanup_only_due_to_boundary_cooldown = False
         self._compaction_request.below_threshold_cleanup_only = False
         self._compaction_request.automatic_request = False
@@ -1981,7 +2083,8 @@ class CompactionMixin:
             and not force
             and self.threshold_tokens > 0
             and (
-                (state.observed_prompt_tokens or 0) < self.threshold_tokens
+                # Fork cold gap: below the threshold on purpose; it runs the threshold sweep, not cleanup.
+                ((state.observed_prompt_tokens or 0) < self.threshold_tokens and not state.cold_gap_requested)
                 or self._no_progress_hold_blocks(state.observed_prompt_tokens or 0)
             )
         )
@@ -2070,7 +2173,7 @@ class CompactionMixin:
             self._config.threshold_full_sweep_enabled
             and not state.force_overflow
             and self.threshold_tokens > 0
-            and state.estimated_active_tokens >= self.threshold_tokens
+            and (state.estimated_active_tokens >= self.threshold_tokens or state.cold_gap_requested)
         )
         # #605: one clock from compress() entry; the hard bound keeps today's step checks.
         state.budget = self._foreground_budget or self._new_foreground_budget()

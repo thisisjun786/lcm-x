@@ -467,6 +467,7 @@ _SUPPORTED_LCM_CONFIG_YAML_KEYS = {
     "expansion_reasoning_effort",
     "embedding_query_prefix", "embedding_document_prefix",
     "threshold_full_sweep_max_passes",
+    "cold_gap_compaction_seconds", "cold_gap_min_prompt_tokens",
 }
 
 
@@ -624,6 +625,46 @@ def _threshold_full_sweep_max_passes_with_source(default: int) -> tuple[int, str
     return value, source, "; ".join(w for w in warnings if w) or None
 
 
+def _cold_gap_setting_with_source(name: str, default: int) -> tuple[int, str, str | None]:
+    """Env ``LCM_<NAME>``, then ``lcm.<name>``, then ``default`` for the cold-gap settings; a value that is not
+    an integer in its range (``cold_gap_compaction_seconds`` also takes ``0`` = off) is ignored with a warning
+    and the next source applies."""
+    minimum, maximum, _inclusive = _ENV_RANGES[name]
+    if name == "cold_gap_compaction_seconds":
+        minimum = _COLD_GAP_MIN_SECONDS  # 0 stays valid (off); 1-299 is rejected
+
+    def checked(raw: Any, label: str) -> tuple[int | None, str | None]:
+        try:
+            if isinstance(raw, bool):
+                raise ValueError(raw)
+            value = int(str(raw).strip())
+        except (TypeError, ValueError):
+            return None, f"invalid {label}={repr(raw)[:40]} ignored (must be an integer)"
+        if value == 0 and name == "cold_gap_compaction_seconds":
+            return value, None
+        if not minimum <= value <= maximum:
+            off = "0 or " if name == "cold_gap_compaction_seconds" else ""
+            return None, f"invalid {label}={value!r} ignored (must be {off}>= {minimum} and <= {maximum})"
+        return value, None
+
+    value, source, warnings = default, "default", []
+    lcm_section = _load_hermes_config_yaml().get("lcm")
+    raw_yaml = lcm_section.get(name) if isinstance(lcm_section, dict) else None
+    if raw_yaml is not None:
+        parsed, warning = checked(raw_yaml, f"lcm.{name}")
+        if parsed is not None:
+            value, source = parsed, f"config_yaml:lcm.{name}"
+        warnings.append(warning)
+    key = f"LCM_{name.upper()}"
+    raw_env = lcm_env_get(key)
+    if raw_env is not None:
+        parsed, warning = checked(raw_env, f"env {key}")
+        if parsed is not None:
+            value, source = parsed, f"env:{key}"
+        warnings.append(warning)
+    return value, source, "; ".join(w for w in warnings if w) or None
+
+
 def _hermes_auxiliary_compression_timeout_ms(default: int) -> int:
     """Read Hermes auxiliary.compression.timeout when no LCM override is present.
 
@@ -733,7 +774,11 @@ _ENV_RANGES = {
     "summary_timeout_ms": (0, None, False),
     # Enforced: a value outside the range is ignored (see _threshold_full_sweep_max_passes_with_source).
     "threshold_full_sweep_max_passes": (1, 64, True),
+    # Enforced (see _cold_gap_setting_with_source): 0 (off) or _COLD_GAP_MIN_SECONDS..86400.
+    "cold_gap_compaction_seconds": (0, 86400, True),
+    "cold_gap_min_prompt_tokens": (1, 10_000_000, True),
 }
+_COLD_GAP_MIN_SECONDS = 300
 
 
 def _warn_env_range(name: str, value: Any, warnings: list[str]) -> None:
@@ -863,6 +908,8 @@ ENV_FIELD_SPECS: tuple[_EnvFieldSpec, ...] = (
     _EnvFieldSpec("critical_budget_pressure_ratio", "LCM_CRITICAL_BUDGET_PRESSURE_RATIO", float),
     _EnvFieldSpec("threshold_full_sweep_enabled", "LCM_THRESHOLD_FULL_SWEEP_ENABLED", bool),
     _EnvFieldSpec("threshold_full_sweep_max_passes", "LCM_THRESHOLD_FULL_SWEEP_MAX_PASSES", int),
+    _EnvFieldSpec("cold_gap_compaction_seconds", "LCM_COLD_GAP_COMPACTION_SECONDS", int),
+    _EnvFieldSpec("cold_gap_min_prompt_tokens", "LCM_COLD_GAP_MIN_PROMPT_TOKENS", int),
     _EnvFieldSpec("summary_prefix_target_tokens", "LCM_SUMMARY_PREFIX_TARGET_TOKENS", int),
     _EnvFieldSpec("preserved_objective_max_chars", "LCM_PRESERVED_OBJECTIVE_MAX_CHARS", int),
     _EnvFieldSpec("foreground_soft_seconds", "LCM_FOREGROUND_SOFT_SECONDS", float),
@@ -1007,6 +1054,8 @@ _SOURCE_TRACKED_ENV_FIELDS = frozenset({
     "summary_prompt_version",
     "stub_first_exit_target_ratio",
     "threshold_full_sweep_max_passes",
+    "cold_gap_compaction_seconds",
+    "cold_gap_min_prompt_tokens",
 })
 
 # Fields exposed as runtime preset overrides (consumed by presets.py).
@@ -1085,6 +1134,11 @@ class LCMConfig:
     # Summary calls (leaf plus condensation) one threshold sweep may make; 1-64.
     # Env LCM_THRESHOLD_FULL_SWEEP_MAX_PASSES, then config.yaml lcm.threshold_full_sweep_max_passes.
     threshold_full_sweep_max_passes: int = 12
+    # Turn-start compaction after an idle gap (the provider cache is cold): seconds since this conversation's last
+    # provider call, 0 = off, else 300-86400. Env LCM_COLD_GAP_COMPACTION_SECONDS, then lcm.cold_gap_compaction_seconds.
+    cold_gap_compaction_seconds: int = 0
+    # Provider-reported prompt tokens of the last call a cold-gap compaction needs; 1-10000000.
+    cold_gap_min_prompt_tokens: int = 300_000
     # Target frontier-summary size after a sweep (0 = one leaf budget, capped at a quarter of the compaction threshold).
     summary_prefix_target_tokens: int = 0
     # Characters of the user's own words carried in the preserved-objective scaffold after compaction;
@@ -1637,6 +1691,10 @@ class LCMConfig:
             c.threshold_full_sweep_max_passes
         )
         _record("threshold_full_sweep_max_passes", source, warning)
+        for name in ("cold_gap_compaction_seconds", "cold_gap_min_prompt_tokens"):
+            value, source, warning = _cold_gap_setting_with_source(name, getattr(c, name))
+            setattr(c, name, value)
+            _record(name, source, warning)
 
         # Every other scalar LCM_* override is applied uniformly from the spec.
         for spec in ENV_FIELD_SPECS:

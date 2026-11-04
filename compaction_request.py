@@ -15,3 +15,6 @@ class CompactionRequest:
     automatic_request: bool = False
     # #618: a hold is active at the survival ceiling, so this pass only fits.
     hold_fit_only_requested: bool = False
+    # Fork: preflight found a cold gap (idle past cold_gap_compaction_seconds) below the threshold; compress() runs
+    # the threshold full sweep instead of below-threshold cleanup, and arms no #651 hold.
+    cold_gap: bool = False

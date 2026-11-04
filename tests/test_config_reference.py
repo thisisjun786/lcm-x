@@ -24,6 +24,8 @@ def test_reference_diagnostic_ranges():
         "leaf_chunk_tokens": (1, None, True),
         "summary_timeout_ms": (0, None, False),
         "threshold_full_sweep_max_passes": (1, 64, True),
+        "cold_gap_compaction_seconds": (0, 86400, True),
+        "cold_gap_min_prompt_tokens": (1, 10_000_000, True),
     }
 
 

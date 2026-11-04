@@ -5145,6 +5145,7 @@ def lcm_status(args: Dict[str, Any], **kwargs) -> str:
         "uid_coverage": full_status.get("uid_coverage", {}),
         "last_survival_fit": full_status.get("last_survival_fit"),
         "threshold_full_sweep": full_status.get("threshold_full_sweep"),
+        "cold_gap_compaction": engine._cold_gap_status(),  # fork: settings and the last cold-gap event
         "last_stub_first_exit": full_status.get("last_stub_first_exit"),
         "no_progress_hold": full_status.get("no_progress_hold"),
         **({"background_leaf_prep": full_status["background_leaf_prep"]}  # #787; absent while off
@@ -5210,6 +5211,8 @@ def lcm_status(args: Dict[str, Any], **kwargs) -> str:
             "threshold_full_sweep_enabled": engine._config.threshold_full_sweep_enabled,
             "summary_prefix_target_tokens": engine._config.summary_prefix_target_tokens,
             "threshold_full_sweep_max_passes": engine._config.threshold_full_sweep_max_passes,
+            "cold_gap_compaction_seconds": engine._config.cold_gap_compaction_seconds,
+            "cold_gap_min_prompt_tokens": engine._config.cold_gap_min_prompt_tokens,
             "threshold_full_sweep_max_seconds": engine._foreground_budget_seconds()[1],
             "foreground_soft_seconds": engine._foreground_budget_seconds()[0],
             "context_threshold": engine._config.context_threshold,

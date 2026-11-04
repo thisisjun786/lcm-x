@@ -151,6 +151,8 @@
     "cache_friendly_condensation_enabled": false,
     "cache_friendly_min_debt_groups": 2,
     "codex_gpt55_autoraise_enabled": true,
+    "cold_gap_compaction_seconds": 0,
+    "cold_gap_min_prompt_tokens": 300000,
     "condensation_fanin": 4,
     "config_source_warnings": [
       "LCM_LEAF_TARGET_RATIO has no effect while the minimum equals the maximum; set LCM_LEAF_TARGET_MAX_TOKENS"
@@ -171,6 +173,8 @@
       "summary_spend_backoff_seconds": "env:LCM_SUMMARY_SPEND_BACKOFF_SECONDS",
       "summary_spend_max_calls": "env:LCM_SUMMARY_SPEND_MAX_CALLS",
       "threshold_full_sweep_max_passes": "default",
+      "cold_gap_compaction_seconds": "default",
+      "cold_gap_min_prompt_tokens": "default",
       "summary_spend_window_seconds": "env:LCM_SUMMARY_SPEND_WINDOW_SECONDS",
       "summary_timeout_ms": "env:LCM_SUMMARY_TIMEOUT_MS"
     },
