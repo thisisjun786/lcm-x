@@ -932,6 +932,54 @@ class IdentityAnchorMixin:
             return None
         return run[:len(full[0])]
 
+    def _identity_anchor_absorbed_claims(self, chunk, full_map, frontier, carry) -> dict:
+        """fork: ``{id(carrier): [store_id, ...]}`` for each unmapped LCM carrier of ``chunk`` (a verified summary
+        prefix and a remainder) whose ``_absorbed_message_uids`` name, in order, owned user rows of this conversation
+        above ``frontier`` (each uid one canonical binding of this lineage, no version), mapped by no view row and
+        claimed by no other carrier, whose stored forms joined by the host's ``"\n\n"`` are exactly the remainder.
+        All of a carrier's rows or none; any failed check claims nothing (the carrier stays unclaimed, as before)."""
+        from .host_uid import _valid_uid
+
+        out: dict = {}
+        taken = set(full_map.values())
+        lineage = None
+        for message in chunk:
+            uids = message.get("_absorbed_message_uids")
+            if (id(message) in full_map or message.get("role") != "user" or message.get("tool_calls")
+                    or not isinstance(uids, list) or not uids or not all(_valid_uid(uid) for uid in uids)
+                    or len(set(uids)) != len(uids) or self._generated_context_carrier_remainder(message) is None):
+                continue
+            lineage = lineage if lineage is not None else self._host_uid_lineage_key()[0] or ""
+            if not lineage:
+                return out
+            bindings = self._store.host_uid_bindings_for(lineage, uids)
+            if any(len(bindings.get(uid, ())) != 1 or bindings[uid][0][1] != "canonical" for uid in uids):
+                continue
+            ids = [int(bindings[uid][0][0]) for uid in uids]
+            if ids != sorted(set(ids)) or ids[0] <= frontier or taken & set(ids):
+                continue
+            found = self._store.get_batch(ids)
+            rows = [found.get(store_id) for store_id in ids]
+            if any(row is None or row.get("role") != "user" or not self._identity_anchor_owned(row, carry)
+                   or str(row.get("conversation_id") or "") != str(self._conversation_id or "") for row in rows):
+                continue
+            self._load_host_rewrite_overrides(rows)
+            identity = self._message_replay_identity(message)  # the carrier stripped: its remainder
+            if _lossy(identity):
+                continue
+            if len(rows) == 1:
+                matches = identity in self._stored_row_forms(rows[0])
+            else:
+                forms = [{form[1] for form in self._stored_row_forms(row) if not _lossy(form)} for row in rows]
+                found_parts = _decompositions(identity[1], set().union(*forms), partial=False)
+                full = [parts for parts, rest in found_parts or () if not rest]
+                matches = (len(full) == 1 and len(full[0]) == len(rows)
+                           and all(text in forms[i] for i, text in enumerate(full[0])))
+            if matches:
+                taken.update(ids)
+                out[id(message)] = ids
+        return out
+
     def _identity_anchor_emitted_carriers(self, identity_messages, proof, carriers) -> dict:
         """#1000: ``{idx: entry}`` for each carrier descriptor of the active proof that the view still holds as the
         occurrence LCM emitted: projected at its own recorded output index (continuity), and not retired. A
@@ -1193,9 +1241,10 @@ class IdentityAnchorMixin:
             if not uid_pairs and not audit.get("unpaired_count") and not audit.get("covered_store_ids"):
                 return None
             # The switch controls legacy identity anchoring, not UID provenance.
+            frontier, carry = self._store_complete_frontier(), self._load_compression_carry_ranges()
             return self._store_complete_input(
-                chunk, {}, full_map, view, raw_chunk, self._store_complete_frontier(),
-                self._load_compression_carry_ranges(), max(budget or 0, count_messages_tokens(chunk)),
+                chunk, self._identity_anchor_absorbed_claims(chunk, full_map, frontier, carry), full_map, view,
+                raw_chunk, frontier, carry, max(budget or 0, count_messages_tokens(chunk)),
                 accounted_ids, copy_lookup=copy_lookup)
         frontier, mapped = self._store_complete_frontier(), set(full_map.values())
         carry = self._load_compression_carry_ranges()
@@ -1203,15 +1252,16 @@ class IdentityAnchorMixin:
         def owned(row) -> bool:
             return self._identity_anchor_owned(row, carry)
 
-        claimed: set[int] = set()
-        claims: dict[int, list] = {}
+        # fork: a carrier whose remainder is the text of the rows its absorbed uids name claims them first.
+        claims: dict[int, list] = self._identity_anchor_absorbed_claims(chunk, full_map, frontier, carry)
+        claimed: set[int] = {store_id for ids in claims.values() for store_id in ids}
         shown: Optional[Counter] = None  # the view's unmapped occurrences, built once on first need
         in_view: set[int] = set()  # id() of the view objects, built with ``shown``
         self._identity_anchor_text_memo = {}
         scope = [str(self._session_id), *self._identity_anchor_chain()]
         for message in chunk:
             stamp = _normalize_observed_at(message.get("timestamp"))
-            if id(message) in full_map:
+            if id(message) in full_map or id(message) in claims:
                 continue
             if stamp is None:  # D-D plan (ii): LCM's carrier merged with stored rows claims them (text in it)
                 group = self._identity_anchor_carrier_group(message, set()) or ()
