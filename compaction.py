@@ -1415,12 +1415,23 @@ class CompactionMixin:
         carry = self._load_compression_carry_ranges()
         unpaired = []
         unresolved = set()
+        inert = set()  # fork: unmapped LCM scaffold nothing can claim; it can never be leaf input
         for message in view:
             if id(message) in full_map:
                 continue
-            if self._generated_context_carrier_remainder(message) is not None or self._is_context_summary_content(
-                    message.get("content")) or self._preserved_objective_context_content(message):
-                continue  # LCM scaffolding (summary, carrier, preserved objective) is never an unpaired source
+            if (self._generated_context_carrier_remainder(message) is not None
+                    or self._is_context_summary_content(message.get("content"))
+                    or self._preserved_objective_context_content(message)):
+                # LCM scaffolding (summary, carrier, preserved objective) is never an unpaired source. Left among
+                # the candidates it is also the OLDEST chunk by itself (a carrier of old summary parts is far
+                # over the chunk budget), the leaf builder drops it (nothing to claim), and every pass ends
+                # ``no paired uncovered source rows`` with zero leaves while the raw backlog behind it grows
+                # (default telegram session 11-09: a 191k-char carrier the host glued from LCM's new summary, the
+                # earlier summary row and the next user row, stored whole by a cold bind, claiming nothing).
+                # Only for a view that carries host uids: a uid-less view keeps its candidates as they were.
+                if has_uid:
+                    inert.add(id(message))
+                continue
             if (self._identity_anchor_key_occurrence(message, set(full_map.values()), carry) is not None
                     or self._identity_anchor_carrier_group(message, set())):
                 continue
@@ -1438,7 +1449,7 @@ class CompactionMixin:
                     continue  # the existing anchor path validates and claims this composite
             unresolved.add(id(message))
             unpaired.append({"store_id": message.get("store_id"), "uid": message.get("message_uid")})
-        if not has_uid and not unresolved and not covered:
+        if not has_uid and not unresolved and not covered and not inert:
             return candidate
         self._uid_coverage_audit = {
             "unpaired_count": len(unpaired), "unpaired": unpaired,
@@ -1456,7 +1467,7 @@ class CompactionMixin:
             # A host group whose rows are all node-covered (also at or below the frontier, which the host may
             # still show) gives the leaf builder nothing: skip it before the oldest chunk is chosen.
             if not any(id(m) in unresolved or full_map.get(id(m)) in covered for m in group) and not all(
-                    full_map.get(id(m)) in settled for m in group):
+                    full_map.get(id(m)) in settled or id(m) in inert for m in group):
                 out.extend(group)
             index = stop
         return out
