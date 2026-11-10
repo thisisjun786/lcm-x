@@ -111,6 +111,9 @@ jobs:
               def should_compress_preflight(self, messages):
                   return False
 
+              def select_context(self, request_messages, *, conversation_messages=None, incoming_message=None, budget_tokens=0):
+                  return None
+
               def get_automatic_compaction_status_message(self, *, phase, default_message, **context):
                   return default_message if self.emit_automatic_compaction_status else None
 
