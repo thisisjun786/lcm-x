@@ -1030,8 +1030,11 @@ class CompactionMixin:
                             "rows=%d tokens=%d conversation=%s", inflight[4] if len(inflight) > 4 else "unknown",
                             self._cold_pass_stop_reason(), first_stop, len(messages),
                             count_messages_tokens(messages), self._conversation_id)
-                        result = messages  # the host sends what it had; nothing was dropped to look smaller
-                        self._ingest_cursor = len(messages)
+                        # The host sends its own rows, row for row (nothing dropped to look smaller, nothing
+                        # added), through the replay redaction ingest applies to content and tool_calls: never
+                        # the caller's raw list. An unchanged list maps back to `messages` below.
+                        result = self._redact_active_replay_messages(messages)
+                        self._ingest_cursor = len(result)
             self._compress_occurrences = None
             if (
                 isinstance(result, list)

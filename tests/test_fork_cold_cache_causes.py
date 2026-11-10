@@ -486,6 +486,81 @@ def test_a_shrinking_cold_pass_covers_every_row_it_removes(engines, clock):
     assert not (_status(engine).get("last_survival_fit") or {}).get("dropped_rows")
 
 
+def test_both_attempts_free_nothing_keeps_the_replay_redaction(engines, clock):
+    engine = engines(sensitive_patterns_enabled=True, sensitive_patterns=["password_assignment"])
+    secret = "SYNTHaaaa1111"
+    messages = _messages(rows=2)[1:]  # two fresh-tail rows, no system row: nothing to summarise or stub
+    messages[0] = dict(messages[0], content=f"deploy note password={secret} " + str(messages[0]["content"]) * 3)
+    redacted_tokens = count_messages_tokens(engine._redact_active_replay_messages(messages))
+    engine.threshold_tokens = int(redacted_tokens / 0.97)  # the cold band is [floor, threshold) on the redacted size
+    _provider_call(engine, clock, T0)
+    clock.now = T0 + GAP
+    assert engine.should_compress_preflight(messages) is True
+    result = engine.compress(messages, current_tokens=count_messages_tokens(messages))
+    event = _event(engine)
+    assert (event["attempts"], event["outcome"]) == (2, "no_progress")
+    assert secret not in json.dumps(result)
+    assert secret in json.dumps(messages)   # the caller's own list is not mutated
+
+
+SECRET = "SYNTHbbbb2222"
+
+
+def _tool_call_turn(call_id: str) -> list[dict]:
+    """An assistant tool call whose JSON arguments carry a synthetic password, and its result."""
+    arguments = json.dumps({"command": f"login --user ops password={SECRET}"})
+    return [{"role": "assistant", "content": "running tool",
+             "tool_calls": [{"id": call_id, "type": "function",
+                             "function": {"name": "shell", "arguments": arguments}}]},
+            {"role": "tool", "tool_call_id": call_id, "content": "logged in"}]
+
+
+def test_a_shrinking_cold_pass_keeps_tool_call_redaction(engines, clock):
+    # The first-attempt path: the pass shrinks and the returned replay keeps the tail's tool call, redacted.
+    engine = engines(sensitive_patterns_enabled=True, sensitive_patterns=["password_assignment"])
+    messages = _messages() + _tool_call_turn("call-tail")
+    _provider_call(engine, clock, T0)
+    clock.now = T0 + GAP
+    assert engine.should_compress_preflight(messages) is True
+    result = engine.compress(messages, current_tokens=count_messages_tokens(messages))
+    assert (_event(engine)["attempts"], _event(engine)["outcome"]) == (1, "shrunk")
+    assert any(m.get("tool_calls") for m in result)
+    assert SECRET not in json.dumps(result)
+    assert SECRET in json.dumps(messages)
+
+
+@pytest.mark.parametrize("attempt", ["same_rows", "added_row", "not_a_list"])
+def test_both_empty_attempts_return_the_redacted_host_rows(engines, clock, monkeypatch, caplog, attempt):
+    # Whatever the empty attempts returned, the host gets its own rows, row for row, redacted (tool_calls too).
+    engine = engines(sensitive_patterns_enabled=True, sensitive_patterns=["password_assignment"])
+    messages = _messages(rows=4) + _tool_call_turn("call-0")
+    tokens = count_messages_tokens(messages)
+    redacted_tokens = count_messages_tokens(engine._redact_active_replay_messages(messages))
+    engine.threshold_tokens = int(redacted_tokens / 0.97)  # the cold band is measured on the redacted size
+    _provider_call(engine, clock, T0)
+    clock.now = T0 + GAP
+    assert engine.should_compress_preflight(messages) is True
+    assert engine._compaction_request.cold_gap is True
+    shapes = {"same_rows": lambda: [dict(m) for m in messages],
+              "added_row": lambda: [*messages, {"role": "assistant", "content": "extra"}],
+              "not_a_list": lambda: None}
+
+    def empty_attempt(*args, **kwargs):
+        engine._last_compression_status = "noop"
+        return shapes[attempt]()
+
+    monkeypatch.setattr(engine, "_compress_impl", empty_attempt)
+    with caplog.at_level(logging.WARNING):
+        result = engine.compress(messages, current_tokens=tokens)
+    assert [r.getMessage().startswith(FREED_NOTHING) for r in caplog.records].count(True) == 1
+    assert (_event(engine)["attempts"], _event(engine)["outcome"]) == (2, "no_progress")
+    assert len(result) == len(messages) and [m["role"] for m in result] == [m["role"] for m in messages]
+    assert SECRET not in json.dumps(result) and SECRET in json.dumps(messages)
+    assert result[-2]["tool_calls"][0]["function"]["name"] == "shell"
+    assert [m.get("content") for m in result[:-2]] == [m.get("content") for m in messages[:-2]]
+    assert engine._ingest_cursor == len(result)
+
+
 # -- 9. structural leaf valve ----------------------------------------------------------------------------------------
 
 
