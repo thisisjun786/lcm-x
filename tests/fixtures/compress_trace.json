@@ -70,6 +70,7 @@
 "message assistant 7c6b372997fd/1266",
 "message user a036540eca3b/1267",
 "message assistant 5af94fa49bf3/1266",
+"attr _cold_threshold_retry=false",
 "attr _compress_escaped=[]",
 "attr _compress_forced_overflow=false",
 "attr _compress_hidden_rows_consumed=0",
@@ -88,7 +89,7 @@
 "attr _pending_emission_candidates=[]",
 "attr _store=sha12/len=f8618c558404/25548",
 "attr _survival_pass_observed=true",
-"attrs count=153 sha256=ff413821f0857933568366445a57675151c30d86bfbd673ba902b937a7bf41e7"
+"attrs count=154 sha256=3f1b91fb8279bf38f446aa3ef0a928f9aff18e2112e09494ff6592c0de13026e"
 ],
 "below-threshold-cleanup-only": [
 "compress attempt=1",
@@ -159,6 +160,7 @@
 "message assistant 7c6b372997fd/1266",
 "message user a036540eca3b/1267",
 "message assistant 5af94fa49bf3/1266",
+"attr _cold_threshold_retry=false",
 "attr _compaction_request=sha12/len=843254abdb56/159",
 "attr _compress_escaped=[]",
 "attr _compress_forced_overflow=false",
@@ -174,7 +176,7 @@
 "attr _pending_emission_candidates=[]",
 "attr _store=sha12/len=f8618c558404/25548",
 "attr _survival_pass_observed=true",
-"attrs count=153 sha256=1fef159f45a367b913dc98163d26ab124cc11b188bc3c5013ac8d8f1d39ae4df"
+"attrs count=154 sha256=531a71aa5dbdd48641db8ca2e98ecf85cf15be5cffede6213e6a9e5ec69127c4"
 ],
 "boundary-cleanup-only": [
 "compress attempt=1",
@@ -245,6 +247,7 @@
 "message assistant 7c6b372997fd/1266",
 "message user a036540eca3b/1267",
 "message assistant 5af94fa49bf3/1266",
+"attr _cold_threshold_retry=false",
 "attr _compaction_request=sha12/len=843254abdb56/159",
 "attr _compress_escaped=[]",
 "attr _compress_forced_overflow=false",
@@ -260,7 +263,7 @@
 "attr _pending_emission_candidates=[]",
 "attr _store=sha12/len=f8618c558404/25548",
 "attr _survival_pass_observed=true",
-"attrs count=153 sha256=11db43ab06fc0d67a1623d67f02806699662634328f3032429f29744312d6b37"
+"attrs count=154 sha256=266294f4132fe86cdafe95f9e9e80449cb6855f79e92099d8af4c46891f032d1"
 ],
 "budget-exhausted-before-leaf": [
 "compress attempt=1",
@@ -338,6 +341,7 @@
 "message assistant 7c6b372997fd/1266",
 "message user a036540eca3b/1267",
 "message assistant 5af94fa49bf3/1266",
+"attr _cold_threshold_retry=false",
 "attr _compress_escaped=[]",
 "attr _compress_forced_overflow=false",
 "attr _compress_hidden_rows_consumed=0",
@@ -372,7 +376,7 @@
 "attr _uid_source_bindings={}",
 "attr _uid_sparse_coverage=false",
 "attr _uid_superseded_store_ids=[]",
-"attrs count=153 sha256=f3dc9ef386f39bd65eac081c32fe2a4780d94a13d0a08ab84ead5eedb00f4cb0"
+"attrs count=154 sha256=39037556f6a7922c5d791823dad67aca8c083ddd91fe1a1c61c8fdd63092133a"
 ],
 "budget-partial-pass": [
 "compress attempt=1",
@@ -471,6 +475,7 @@
 "message assistant 7c6b372997fd/1266",
 "message user a036540eca3b/1267",
 "message assistant 5af94fa49bf3/1266",
+"attr _cold_threshold_retry=false",
 "attr _compress_escaped=[]",
 "attr _compress_forced_overflow=false",
 "attr _compress_hidden_rows_consumed=0",
@@ -505,7 +510,7 @@
 "attr _uid_sparse_coverage=false",
 "attr _uid_superseded_store_ids=[]",
 "attr compression_count=1",
-"attrs count=153 sha256=988644cbadb90d28614540157561271f048c6175888145c4f001497630bb1c9f"
+"attrs count=154 sha256=8857afe95eab39d2166e924d9fd1e047a0b0c931443f9bddb3617d772e27a3ec"
 ],
 "child-session-bypass": [
 "compress attempt=1",
@@ -521,6 +526,7 @@
 "assemble",
 "message system 5ebbb9a2c7c7/25",
 "message assistant c5d0bd23824d/401",
+"attr _cold_threshold_retry=false",
 "attr _compress_escaped=[]",
 "attr _compress_hidden_rows_consumed=0",
 "attr _compress_host_rows_consumed=0",
@@ -528,7 +534,7 @@
 "attr _last_compression_status=\"running\"",
 "attr _pending_emission_candidates=[]",
 "attr compression_count=1",
-"attrs count=153 sha256=b98a3626dfc43ecc70a1cf7a50014b84250fd04604861ba7ccf1c22d46570982"
+"attrs count=154 sha256=62a07aa490f25acc27ce8031f793aa2e55dc9f138585a638173876518c898f2f"
 ],
 "child-session-forced": [
 "compress attempt=1",
@@ -544,6 +550,7 @@
 "assemble",
 "message system 5ebbb9a2c7c7/25",
 "message assistant c5d0bd23824d/401",
+"attr _cold_threshold_retry=false",
 "attr _compress_escaped=[]",
 "attr _compress_hidden_rows_consumed=0",
 "attr _compress_host_rows_consumed=0",
@@ -551,7 +558,7 @@
 "attr _last_compression_status=\"running\"",
 "attr _pending_emission_candidates=[]",
 "attr compression_count=1",
-"attrs count=153 sha256=b98a3626dfc43ecc70a1cf7a50014b84250fd04604861ba7ccf1c22d46570982"
+"attrs count=154 sha256=62a07aa490f25acc27ce8031f793aa2e55dc9f138585a638173876518c898f2f"
 ],
 "child-with-cached-usage": [
 "compress attempt=1",
@@ -567,6 +574,7 @@
 "assemble",
 "message system 5ebbb9a2c7c7/25",
 "message assistant c5d0bd23824d/401",
+"attr _cold_threshold_retry=false",
 "attr _compress_escaped=[]",
 "attr _compress_hidden_rows_consumed=0",
 "attr _compress_host_rows_consumed=0",
@@ -574,7 +582,7 @@
 "attr _last_compression_status=\"running\"",
 "attr _pending_emission_candidates=[]",
 "attr compression_count=1",
-"attrs count=153 sha256=b98a3626dfc43ecc70a1cf7a50014b84250fd04604861ba7ccf1c22d46570982"
+"attrs count=154 sha256=62a07aa490f25acc27ce8031f793aa2e55dc9f138585a638173876518c898f2f"
 ],
 "child-without-usage": [
 "compress attempt=1",
@@ -590,6 +598,7 @@
 "assemble",
 "message system 5ebbb9a2c7c7/25",
 "message assistant c5d0bd23824d/401",
+"attr _cold_threshold_retry=false",
 "attr _compress_escaped=[]",
 "attr _compress_hidden_rows_consumed=0",
 "attr _compress_host_rows_consumed=0",
@@ -597,7 +606,7 @@
 "attr _last_compression_status=\"running\"",
 "attr _pending_emission_candidates=[]",
 "attr compression_count=1",
-"attrs count=153 sha256=b98a3626dfc43ecc70a1cf7a50014b84250fd04604861ba7ccf1c22d46570982"
+"attrs count=154 sha256=62a07aa490f25acc27ce8031f793aa2e55dc9f138585a638173876518c898f2f"
 ],
 "condensation-levels": [
 "compress attempt=1",
@@ -705,6 +714,7 @@
 "message assistant 7c6b372997fd/1266",
 "message user a036540eca3b/1267",
 "message assistant 5af94fa49bf3/1266",
+"attr _cold_threshold_retry=false",
 "attr _compress_escaped=[]",
 "attr _compress_forced_overflow=false",
 "attr _compress_hidden_rows_consumed=0",
@@ -737,7 +747,7 @@
 "attr _uid_sparse_coverage=false",
 "attr _uid_superseded_store_ids=[]",
 "attr compression_count=1",
-"attrs count=153 sha256=212e993f0b437aa9bf3dd9322d13e174735fe19702eccb0d8152b70dd9ec9b81"
+"attrs count=154 sha256=bed8882bc6e7b0d70a171e1c122aa766c74db54c51d268bafd17c62fc2bacf1d"
 ],
 "condensation-publication-locked": [
 "compress attempt=1",
@@ -832,6 +842,7 @@
 "message assistant 7c6b372997fd/1266",
 "message user a036540eca3b/1267",
 "message assistant 5af94fa49bf3/1266",
+"attr _cold_threshold_retry=false",
 "attr _compress_escaped=[]",
 "attr _compress_forced_overflow=false",
 "attr _compress_hidden_rows_consumed=0",
@@ -865,7 +876,7 @@
 "attr _uid_source_bindings={}",
 "attr _uid_sparse_coverage=false",
 "attr _uid_superseded_store_ids=[]",
-"attrs count=153 sha256=f413e9532b3f15ccb7f86940ca2c6a6831815bdd65567f72fccfc758193083f8"
+"attrs count=154 sha256=1fb21925ecf13c5d5114da9e27ae1dce8e643eaa808e00766dc93c198c55b8ea"
 ],
 "condensation-spends-soft-budget": [
 "compress attempt=1",
@@ -950,6 +961,7 @@
 "message assistant 7c6b372997fd/1266",
 "message user a036540eca3b/1267",
 "message assistant 5af94fa49bf3/1266",
+"attr _cold_threshold_retry=false",
 "attr _compress_escaped=[]",
 "attr _compress_forced_overflow=false",
 "attr _compress_hidden_rows_consumed=0",
@@ -969,7 +981,7 @@
 "attr _pending_emission_candidates=sha12/len=fc146730afef/464",
 "attr _store=sha12/len=f8618c558404/25548",
 "attr _survival_pass_observed=true",
-"attrs count=153 sha256=ba2ff7497660bb8900bc8871cfcc422a21021475b0f50377bc3ff0c4877716fa"
+"attrs count=154 sha256=c22221f9df9246fe67f86bcb9b46166ef1751755d034c2f0cfaee815be0ea8a3"
 ],
 "context-length-rescue": [
 "compress attempt=1",
@@ -1068,6 +1080,7 @@
 "message assistant 7c6b372997fd/1266",
 "message user a036540eca3b/1267",
 "message assistant 5af94fa49bf3/1266",
+"attr _cold_threshold_retry=false",
 "attr _compress_escaped=[]",
 "attr _compress_forced_overflow=false",
 "attr _compress_hidden_rows_consumed=0",
@@ -1100,7 +1113,7 @@
 "attr _uid_sparse_coverage=false",
 "attr _uid_superseded_store_ids=[]",
 "attr compression_count=1",
-"attrs count=153 sha256=126881a53565729f4d4a820b993a9520903e635960eed641137b054867c6ae1b"
+"attrs count=154 sha256=9583f5583e37ced44dc05a8ecc2c6b91e68d4edb341a437e5aa9d49ad67e4d97"
 ],
 "deadline-checkpoint-10": [
 "compress attempt=1",
@@ -1173,6 +1186,7 @@
 "message assistant 7c6b372997fd/1266",
 "message user a036540eca3b/1267",
 "message assistant 5af94fa49bf3/1266",
+"attr _cold_threshold_retry=false",
 "attr _compress_escaped=[]",
 "attr _compress_forced_overflow=false",
 "attr _compress_hidden_rows_consumed=0",
@@ -1204,7 +1218,7 @@
 "attr _uid_source_bindings={}",
 "attr _uid_sparse_coverage=false",
 "attr _uid_superseded_store_ids=[]",
-"attrs count=153 sha256=d158b81304b3c79e5118669e6764aab30cba16a98352241bd9d112cd923e8dc7"
+"attrs count=154 sha256=4d5564dd744d303e54caa1a97e74cb595ec4658b2a1b96396e2b3ebeb29b2593"
 ],
 "deadline-checkpoint-4": [
 "compress attempt=1",
@@ -1277,6 +1291,7 @@
 "message assistant 7c6b372997fd/1266",
 "message user a036540eca3b/1267",
 "message assistant 5af94fa49bf3/1266",
+"attr _cold_threshold_retry=false",
 "attr _compress_escaped=[]",
 "attr _compress_forced_overflow=false",
 "attr _compress_hidden_rows_consumed=0",
@@ -1297,7 +1312,7 @@
 "attr _store=sha12/len=f8618c558404/25548",
 "attr _survival_pass_observed=true",
 "attr _sweep_budget_hold_until=1721.0",
-"attrs count=153 sha256=f651e89ebc3a1208dff3ba6115d905cc243c08c73b8937f7854f10d3f3f427ef"
+"attrs count=154 sha256=c0665d7ba0ead8517ce461beb054a1ea261e6c16ccbc23bf30c20310d813e05f"
 ],
 "deadline-checkpoint-6": [
 "compress attempt=1",
@@ -1370,6 +1385,7 @@
 "message assistant 7c6b372997fd/1266",
 "message user a036540eca3b/1267",
 "message assistant 5af94fa49bf3/1266",
+"attr _cold_threshold_retry=false",
 "attr _compress_escaped=[]",
 "attr _compress_forced_overflow=false",
 "attr _compress_hidden_rows_consumed=0",
@@ -1390,7 +1406,7 @@
 "attr _store=sha12/len=f8618c558404/25548",
 "attr _survival_pass_observed=true",
 "attr _sweep_budget_hold_until=1721.0",
-"attrs count=153 sha256=f651e89ebc3a1208dff3ba6115d905cc243c08c73b8937f7854f10d3f3f427ef"
+"attrs count=154 sha256=c0665d7ba0ead8517ce461beb054a1ea261e6c16ccbc23bf30c20310d813e05f"
 ],
 "deadline-checkpoint-8": [
 "compress attempt=1",
@@ -1463,6 +1479,7 @@
 "message assistant 7c6b372997fd/1266",
 "message user a036540eca3b/1267",
 "message assistant 5af94fa49bf3/1266",
+"attr _cold_threshold_retry=false",
 "attr _compress_escaped=[]",
 "attr _compress_forced_overflow=false",
 "attr _compress_hidden_rows_consumed=0",
@@ -1484,7 +1501,7 @@
 "attr _store=sha12/len=f8618c558404/25548",
 "attr _survival_pass_observed=true",
 "attr _sweep_budget_hold_until=1721.0",
-"attrs count=153 sha256=84e8526852a9c686f432f1106598b211896145f749977a4ae44e0cb5d713da39"
+"attrs count=154 sha256=f170303ddd5f2ef5b075c2d14deacbe688e5e9c04b6a933de762c2b4ea944322"
 ],
 "deadline-hidden-backlog-read": [
 "compress attempt=1",
@@ -1505,6 +1522,7 @@
 "assemble",
 "message user a036540eca3b/1267",
 "message assistant 5af94fa49bf3/1266",
+"attr _cold_threshold_retry=false",
 "attr _compress_escaped=[]",
 "attr _compress_forced_overflow=false",
 "attr _compress_hidden_rows_consumed=0",
@@ -1524,7 +1542,7 @@
 "attr _pending_emission_candidates=[]",
 "attr _survival_pass_observed=true",
 "attr _sweep_budget_hold_until=1721.0",
-"attrs count=153 sha256=6d134729bd0fc65189cdaee6d34dc0f4d65dc480bc1405d22b8f1b62250eaf0a"
+"attrs count=154 sha256=b6cce31d7ef49b37e092c07b97163568df3b8f21ba08bf2b65a7763e192fad9c"
 ],
 "default-sweep-target": [
 "compress attempt=1",
@@ -1668,6 +1686,7 @@
 "message user c7f31850e580/241",
 "message user a036540eca3b/1267",
 "message assistant 5af94fa49bf3/1266",
+"attr _cold_threshold_retry=false",
 "attr _compress_escaped=[]",
 "attr _compress_forced_overflow=false",
 "attr _compress_hidden_rows_consumed=0",
@@ -1702,7 +1721,7 @@
 "attr _uid_sparse_coverage=false",
 "attr _uid_superseded_store_ids=[]",
 "attr compression_count=1",
-"attrs count=153 sha256=99b1942d5faf1826d2d9898cee51cba0bd27490b4e32ec4804b27174c6f5e5c6"
+"attrs count=154 sha256=33cc5a606182aaa11db3310d8d843cab399702b609ad81e02ecac2281b0a7ea9"
 ],
 "deferred-critical-small-backlog": [
 "compress attempt=1",
@@ -1781,6 +1800,7 @@
 "assemble",
 "message system 6a97437a05d4/508",
 "message user 67e4e8b1c7a0/112",
+"attr _cold_threshold_retry=false",
 "attr _compress_escaped=[]",
 "attr _compress_forced_overflow=true",
 "attr _compress_hidden_rows_consumed=0",
@@ -1815,7 +1835,7 @@
 "attr _uid_sparse_coverage=false",
 "attr _uid_superseded_store_ids=[]",
 "attr compression_count=1",
-"attrs count=153 sha256=bfbc334b08dc663d31132465e88835be0db3bde771770f8f814bf4213063c0bb"
+"attrs count=154 sha256=27cad319d68100bca4a569c0881ab99ca74a3508fe6491c17506d0e9066bfe43"
 ],
 "deferred-maintenance": [
 "compress attempt=1",
@@ -1910,6 +1930,7 @@
 "message assistant 7c6b372997fd/1266",
 "message user a036540eca3b/1267",
 "message assistant 5af94fa49bf3/1266",
+"attr _cold_threshold_retry=false",
 "attr _compress_escaped=[]",
 "attr _compress_forced_overflow=false",
 "attr _compress_hidden_rows_consumed=0",
@@ -1942,7 +1963,7 @@
 "attr _uid_sparse_coverage=false",
 "attr _uid_superseded_store_ids=[]",
 "attr compression_count=1",
-"attrs count=153 sha256=ca9e8455d41277752bf35e109b194e136769351ce47f29974fd1a4ac697db218"
+"attrs count=154 sha256=4a861ed5034be5793be007660207d283b5496cafa432e7806709e28e95388a95"
 ],
 "dependent-nonreply-barrier": [
 "non-reply role: both fingerprints absent despite persisted ledger; generated=False",
@@ -1996,6 +2017,7 @@
 "message assistant 7c6b372997fd/1266",
 "message user a036540eca3b/1267",
 "message assistant 5af94fa49bf3/1266",
+"attr _cold_threshold_retry=false",
 "attr _compress_escaped=[]",
 "attr _compress_forced_overflow=false",
 "attr _compress_hidden_rows_consumed=0",
@@ -2025,7 +2047,7 @@
 "attr _uid_sparse_coverage=false",
 "attr _uid_superseded_store_ids=[]",
 "attr compression_count=1",
-"attrs count=153 sha256=47201bf46c1983da98b942e85a93b1f99f6ef19c6d03a04a1ed8fe4f1191eab0"
+"attrs count=154 sha256=684bd267b218339a7bfaf78e05529f60c7b7f219513ff35ea5df34593a437839"
 ],
 "dependent-only-leaf": [
 "compress attempt=1",
@@ -2074,6 +2096,7 @@
 "message user 67e4e8b1c7a0/112",
 "message user b3e9e4ecee67/14",
 "message assistant 6a500e118d1f/14",
+"attr _cold_threshold_retry=false",
 "attr _compress_escaped=[]",
 "attr _compress_forced_overflow=false",
 "attr _compress_hidden_rows_consumed=0",
@@ -2103,7 +2126,7 @@
 "attr _uid_sparse_coverage=false",
 "attr _uid_superseded_store_ids=[]",
 "attr compression_count=1",
-"attrs count=153 sha256=bc4a7597cb65910ad4d75c845f27accb5b07039ba55d8965b848ce1eaa324ed8"
+"attrs count=154 sha256=860d7e1f34dcd8d224a4c9fa0de771e5230a6afeae52db4b407f68d3444b1178"
 ],
 "dynamic-below-minimum": [
 "compress attempt=1",
@@ -2176,6 +2199,7 @@
 "message assistant 7c6b372997fd/1266",
 "message user a036540eca3b/1267",
 "message assistant 5af94fa49bf3/1266",
+"attr _cold_threshold_retry=false",
 "attr _compress_escaped=[]",
 "attr _compress_forced_overflow=false",
 "attr _compress_hidden_rows_consumed=0",
@@ -2194,7 +2218,7 @@
 "attr _pending_emission_candidates=[]",
 "attr _store=sha12/len=f8618c558404/25548",
 "attr _survival_pass_observed=true",
-"attrs count=153 sha256=b3686d32c39ead054f70901fb28aa588da09c4153480d1837d053c9f7d89306e"
+"attrs count=154 sha256=2b4669e761e04f5186c62b4f760fdb577995b2b819b6e296bb70b8e453f3d97a"
 ],
 "dynamic-below-minimum-no-fit": [
 "compress attempt=1",
@@ -2267,6 +2291,7 @@
 "message assistant 7c6b372997fd/1266",
 "message user a036540eca3b/1267",
 "message assistant 5af94fa49bf3/1266",
+"attr _cold_threshold_retry=false",
 "attr _compress_escaped=[]",
 "attr _compress_forced_overflow=false",
 "attr _compress_hidden_rows_consumed=0",
@@ -2286,7 +2311,7 @@
 "attr _pending_emission_candidates=[]",
 "attr _store=sha12/len=f8618c558404/25548",
 "attr _survival_pass_observed=true",
-"attrs count=153 sha256=3d0edb8bc1a37789b58f0301125c99a26ba5cd0cbe31f2e447f025b25b9aae17"
+"attrs count=154 sha256=56079cf295dc559df3a23e91c10e1753105971be2236099c6a12f9a078ac770e"
 ],
 "dynamic-forced-overflow": [
 "compress attempt=1",
@@ -2363,6 +2388,7 @@
 "assemble",
 "message system 6a97437a05d4/508",
 "message user 67e4e8b1c7a0/112",
+"attr _cold_threshold_retry=false",
 "attr _compress_escaped=[]",
 "attr _compress_forced_overflow=true",
 "attr _compress_hidden_rows_consumed=0",
@@ -2397,7 +2423,7 @@
 "attr _uid_sparse_coverage=false",
 "attr _uid_superseded_store_ids=[]",
 "attr compression_count=1",
-"attrs count=153 sha256=02cdcb83c14553e3c2a9f8f56f3a45bd15ff12dd292e046a904d75d62e6d333d"
+"attrs count=154 sha256=4d65f238b9286db0f29257ec5109e5a1d53f364a887e3f75b8e47bd4e643798e"
 ],
 "dynamic-fresh-tail-yield": [
 "compress attempt=1",
@@ -2499,6 +2525,7 @@
 "message assistant 7c6b372997fd/1266",
 "message user a036540eca3b/1267",
 "message assistant 5af94fa49bf3/1266",
+"attr _cold_threshold_retry=false",
 "attr _compress_escaped=[]",
 "attr _compress_forced_overflow=false",
 "attr _compress_hidden_rows_consumed=0",
@@ -2531,7 +2558,7 @@
 "attr _uid_sparse_coverage=false",
 "attr _uid_superseded_store_ids=[]",
 "attr compression_count=1",
-"attrs count=153 sha256=03a6c2f64a651664a0057e0336f4cf7f149bc50c04f36786bd75f6d625ce690b"
+"attrs count=154 sha256=0fe68a07160dccdbfbe1d4ba64136285854029c0ba799890fa0b0878c0276348"
 ],
 "dynamic-leaf-passes": [
 "compress attempt=1",
@@ -2652,6 +2679,7 @@
 "message assistant 7c6b372997fd/1266",
 "message user a036540eca3b/1267",
 "message assistant 5af94fa49bf3/1266",
+"attr _cold_threshold_retry=false",
 "attr _compress_escaped=[]",
 "attr _compress_forced_overflow=false",
 "attr _compress_hidden_rows_consumed=0",
@@ -2684,7 +2712,7 @@
 "attr _uid_sparse_coverage=false",
 "attr _uid_superseded_store_ids=[]",
 "attr compression_count=1",
-"attrs count=153 sha256=eedd4946881c1a4a74bb49c5bd3a29a59656ee33bcc9f43dd0e4d1afb67bfa13"
+"attrs count=154 sha256=f928afe2c004be3c8565a4f86ebbaa83f1be44d9e37375d8530fce74ab52c03b"
 ],
 "dynamic-raw-drained": [
 "compress attempt=1",
@@ -2757,6 +2785,7 @@
 "message assistant 1d3aa33ccd2c/1266",
 "message user d932be6f1500/1267",
 "message assistant 5112d3181a5e/1266",
+"attr _cold_threshold_retry=false",
 "attr _compress_escaped=[]",
 "attr _compress_forced_overflow=false",
 "attr _compress_hidden_rows_consumed=0",
@@ -2789,7 +2818,7 @@
 "attr _uid_sparse_coverage=false",
 "attr _uid_superseded_store_ids=[]",
 "attr compression_count=1",
-"attrs count=153 sha256=d5c38fb80c53f3676f3467a17790d868d6b742320afe24cdc7baad3376ef2e5d"
+"attrs count=154 sha256=5ebbfd3ab1d7520ad925ca7b6a93654c6843028d52229751abc2894e3288e6cb"
 ],
 "dynamic-small-backlog-yields": [
 "compress attempt=1",
@@ -2870,6 +2899,7 @@
 "message user 67e4e8b1c7a0/112",
 "message user 69e6fa69ef3f/1444",
 "message assistant 5af94fa49bf3/1266",
+"attr _cold_threshold_retry=false",
 "attr _compress_escaped=[]",
 "attr _compress_forced_overflow=false",
 "attr _compress_hidden_rows_consumed=0",
@@ -2902,7 +2932,7 @@
 "attr _uid_sparse_coverage=false",
 "attr _uid_superseded_store_ids=[]",
 "attr compression_count=1",
-"attrs count=153 sha256=f06170c2f8c3929cd6bad47b0c36592679c1596b2e8992198d245361bce72589"
+"attrs count=154 sha256=925fe824f32c322337a7aa7026f469914bfbc563b367b218ef2d1932c4ef343b"
 ],
 "dynamic-threshold-reached": [
 "compress attempt=1",
@@ -2993,6 +3023,7 @@
 "message assistant 7c6b372997fd/1266",
 "message user a036540eca3b/1267",
 "message assistant 5af94fa49bf3/1266",
+"attr _cold_threshold_retry=false",
 "attr _compress_escaped=[]",
 "attr _compress_forced_overflow=false",
 "attr _compress_hidden_rows_consumed=0",
@@ -3025,7 +3056,7 @@
 "attr _uid_sparse_coverage=false",
 "attr _uid_superseded_store_ids=[]",
 "attr compression_count=1",
-"attrs count=153 sha256=3ee8599dcd6a542ef7ea587360cf31d1b5852bf08b5157fb876ce11ab78951ed"
+"attrs count=154 sha256=bbd4a0a4ae1d32bb14bfdc1a7377e9a4c60f8a8b9fc4bc52c5431e669bc56c14"
 ],
 "empty": [
 "compress attempt=1",
@@ -3037,6 +3068,7 @@
 "sql #1 sha12/len=4702b2b116a4/157",
 "sql COMMIT",
 "assemble",
+"attr _cold_threshold_retry=false",
 "attr _compress_escaped=[]",
 "attr _compress_hidden_rows_consumed=0",
 "attr _compress_host_rows_consumed=0",
@@ -3044,7 +3076,7 @@
 "attr _last_compression_noop_reason=\"empty message list\"",
 "attr _last_compression_status=\"noop\"",
 "attr _pending_emission_candidates=[]",
-"attrs count=153 sha256=3de40ccdc05064265bde47af7b4628212876b3f92757cef2af70deb7e001dce8"
+"attrs count=154 sha256=e4cf0ec033931dacd16cd26eb28e93a4ca7bd87ac5e085e54a515d424a1522f2"
 ],
 "escalation-level-three": [
 "compress attempt=1",
@@ -3137,6 +3169,7 @@
 "message assistant 7c6b372997fd/1266",
 "message user a036540eca3b/1267",
 "message assistant 5af94fa49bf3/1266",
+"attr _cold_threshold_retry=false",
 "attr _compress_escaped=[]",
 "attr _compress_forced_overflow=false",
 "attr _compress_hidden_rows_consumed=0",
@@ -3169,7 +3202,7 @@
 "attr _uid_sparse_coverage=false",
 "attr _uid_superseded_store_ids=[]",
 "attr compression_count=1",
-"attrs count=153 sha256=64860285cd5412f98d21188224f4e823c359581d67ef5de6badb4dedd4acb4b1"
+"attrs count=154 sha256=858af1bc7b44f63f8850f5b533fe44bfad3631f7474763368d5cecad4ae32822"
 ],
 "escalation-level-two": [
 "compress attempt=1",
@@ -3262,6 +3295,7 @@
 "message assistant 7c6b372997fd/1266",
 "message user a036540eca3b/1267",
 "message assistant 5af94fa49bf3/1266",
+"attr _cold_threshold_retry=false",
 "attr _compress_escaped=[]",
 "attr _compress_forced_overflow=false",
 "attr _compress_hidden_rows_consumed=0",
@@ -3294,7 +3328,7 @@
 "attr _uid_sparse_coverage=false",
 "attr _uid_superseded_store_ids=[]",
 "attr compression_count=1",
-"attrs count=153 sha256=dab8a0bfd8aadca88b005089473d6dc71396e0edcfb5d7c5485d2066dcf0d798"
+"attrs count=154 sha256=3aa452832f341b64a0d2f0d66ffa4cda90623172394c104472589badd5d80ded"
 ],
 "escalation-rejected-keeps-backlog": [
 "compress attempt=1",
@@ -3372,6 +3406,7 @@
 "message assistant 7c6b372997fd/1266",
 "message user a036540eca3b/1267",
 "message assistant 5af94fa49bf3/1266",
+"attr _cold_threshold_retry=false",
 "attr _compress_escaped=[]",
 "attr _compress_forced_overflow=false",
 "attr _compress_hidden_rows_consumed=0",
@@ -3403,7 +3438,7 @@
 "attr _uid_source_bindings={}",
 "attr _uid_sparse_coverage=false",
 "attr _uid_superseded_store_ids=[]",
-"attrs count=153 sha256=0bd54cf76a534ba8effa98ee89e7529d7f5584c309addcaa9921cf5099f24f0d"
+"attrs count=154 sha256=5f49c8dcadc3a931871d28c60c0fac4cc13757ab90c44f108765d0b983544bd0"
 ],
 "explicit-focus": [
 "compress attempt=1",
@@ -3494,6 +3529,7 @@
 "message assistant 7c6b372997fd/1266",
 "message user a036540eca3b/1267",
 "message assistant 5af94fa49bf3/1266",
+"attr _cold_threshold_retry=false",
 "attr _compress_escaped=[]",
 "attr _compress_forced_overflow=false",
 "attr _compress_hidden_rows_consumed=0",
@@ -3526,7 +3562,7 @@
 "attr _uid_sparse_coverage=false",
 "attr _uid_superseded_store_ids=[]",
 "attr compression_count=1",
-"attrs count=153 sha256=47201bf46c1983da98b942e85a93b1f99f6ef19c6d03a04a1ed8fe4f1191eab0"
+"attrs count=154 sha256=684bd267b218339a7bfaf78e05529f60c7b7f219513ff35ea5df34593a437839"
 ],
 "externalized-payloads": [
 "compress attempt=1",
@@ -3634,6 +3670,7 @@
 "message tool 42152c96b8ab/237",
 "message assistant b61a04d6dd7e/1600",
 "message tool 5b2c2c72fea5/237",
+"attr _cold_threshold_retry=false",
 "attr _compress_escaped=[]",
 "attr _compress_forced_overflow=false",
 "attr _compress_hidden_rows_consumed=0",
@@ -3666,7 +3703,7 @@
 "attr _uid_sparse_coverage=false",
 "attr _uid_superseded_store_ids=[]",
 "attr compression_count=1",
-"attrs count=153 sha256=ebf19242645c2702ed765af586f98781715e5ec8e290873af912c7f3d0423ed1"
+"attrs count=154 sha256=1d5cb3f0c948991a651a534530381683ac05979a79d23fe952a6e47501c5aaf3"
 ],
 "externalized-transcript-gc": [
 "compress attempt=1",
@@ -3767,6 +3804,7 @@
 "message user 69e6fa69ef3f/1444",
 "message assistant b61a04d6dd7e/1600",
 "message tool b3f7e026a84f/1600",
+"attr _cold_threshold_retry=false",
 "attr _compress_escaped=[]",
 "attr _compress_forced_overflow=false",
 "attr _compress_hidden_rows_consumed=0",
@@ -3799,7 +3837,7 @@
 "attr _uid_sparse_coverage=false",
 "attr _uid_superseded_store_ids=[]",
 "attr compression_count=1",
-"attrs count=153 sha256=da02821f43b15eebe5244ec4c7736aa7a4d39b90b7161028dad8c7ef94f118fd"
+"attrs count=154 sha256=781e521fd21250c53b5d7a173b8e6e7f662f2b076007f5c919e572d64675027e"
 ],
 "finish-callable-telemetry": [
 "compress attempt=1",
@@ -3931,6 +3969,7 @@
 "message user c9c175d956bb/826",
 "message user a036540eca3b/1267",
 "message assistant 5af94fa49bf3/1266",
+"attr _cold_threshold_retry=false",
 "attr _compress_escaped=[]",
 "attr _compress_forced_overflow=false",
 "attr _compress_hidden_rows_consumed=0",
@@ -3965,7 +4004,7 @@
 "attr _uid_sparse_coverage=false",
 "attr _uid_superseded_store_ids=[]",
 "attr compression_count=1",
-"attrs count=153 sha256=8014621e5a78540f4efa9297a85e2995ee311557b5a7a2c2e8526bf57d2edd38"
+"attrs count=154 sha256=2a29b6ce058f6b10317eedd2d265ce00c026f37705438a94d83eb8a0885915ea"
 ],
 "finish-condensation-lock": [
 "compress attempt=1",
@@ -4062,6 +4101,7 @@
 "message assistant 7c6b372997fd/1266",
 "message user a036540eca3b/1267",
 "message assistant 5af94fa49bf3/1266",
+"attr _cold_threshold_retry=false",
 "attr _compress_escaped=[]",
 "attr _compress_forced_overflow=false",
 "attr _compress_hidden_rows_consumed=0",
@@ -4095,7 +4135,7 @@
 "attr _uid_source_bindings={}",
 "attr _uid_sparse_coverage=false",
 "attr _uid_superseded_store_ids=[]",
-"attrs count=153 sha256=f413e9532b3f15ccb7f86940ca2c6a6831815bdd65567f72fccfc758193083f8"
+"attrs count=154 sha256=1fb21925ecf13c5d5114da9e27ae1dce8e643eaa808e00766dc93c198c55b8ea"
 ],
 "finish-condensation-nonlock-error": [
 "compress attempt=1",
@@ -4193,6 +4233,7 @@
 "message assistant 7c6b372997fd/1266",
 "message user a036540eca3b/1267",
 "message assistant 5af94fa49bf3/1266",
+"attr _cold_threshold_retry=false",
 "attr _compress_escaped=[]",
 "attr _compress_forced_overflow=false",
 "attr _compress_hidden_rows_consumed=0",
@@ -4224,7 +4265,7 @@
 "attr _uid_source_bindings={}",
 "attr _uid_sparse_coverage=false",
 "attr _uid_superseded_store_ids=[]",
-"attrs count=153 sha256=2a362a3eef13f541c50098c4b7bf6cd622bfb87e53b3c7416b80b1f984eb4f60"
+"attrs count=154 sha256=032856b22c40e6d1ea24292e65a38ff18eebbfdc4ad7b284b225e46d12f2180d"
 ],
 "finish-gc-lock": [
 "compress attempt=1",
@@ -4319,6 +4360,7 @@
 "message user 69e6fa69ef3f/1444",
 "message assistant b61a04d6dd7e/1600",
 "message tool b3f7e026a84f/1600",
+"attr _cold_threshold_retry=false",
 "attr _compress_escaped=[]",
 "attr _compress_forced_overflow=false",
 "attr _compress_hidden_rows_consumed=0",
@@ -4352,7 +4394,7 @@
 "attr _uid_source_bindings={}",
 "attr _uid_sparse_coverage=false",
 "attr _uid_superseded_store_ids=[]",
-"attrs count=153 sha256=7b02a836a4bd1f7c302464ad0e1ed3dccbcb328793dc101e6ee72ab33d6b7064"
+"attrs count=154 sha256=7519b6b74b40f3857779cc44f45ce7be3a6a21f248895d722720b2c6c07b0e95"
 ],
 "finish-post-drain-read-error": [
 "compress attempt=1",
@@ -4498,6 +4540,7 @@
 "message assistant 7c6b372997fd/1266",
 "message user a036540eca3b/1267",
 "message assistant 5af94fa49bf3/1266",
+"attr _cold_threshold_retry=false",
 "attr _compress_escaped=[]",
 "attr _compress_forced_overflow=false",
 "attr _compress_hidden_rows_consumed=0",
@@ -4531,7 +4574,7 @@
 "attr _uid_source_bindings={}",
 "attr _uid_sparse_coverage=false",
 "attr _uid_superseded_store_ids=[]",
-"attrs count=153 sha256=e579ee72fadc361a37bcba1aa70d99b7115ae0b8747316504a969b58b5db666c"
+"attrs count=154 sha256=10293c526e14fefd49b0820058cb273862bedf578a4ffe691a57a242d9c56eb7"
 ],
 "finish-promoted-keys": [
 "compress attempt=1",
@@ -4608,6 +4651,7 @@
 "message user b53243ce9e6d/826",
 "message user a036540eca3b/1267",
 "message assistant 5af94fa49bf3/1266",
+"attr _cold_threshold_retry=false",
 "attr _compress_escaped=[]",
 "attr _compress_forced_overflow=false",
 "attr _compress_hidden_rows_consumed=0",
@@ -4639,7 +4683,7 @@
 "attr _uid_sparse_coverage=false",
 "attr _uid_superseded_store_ids=[]",
 "attr compression_count=1",
-"attrs count=153 sha256=652fad0b50b0dbd3cacb9c237a4c8372e9147933009d7948649c4b00f2fd979d"
+"attrs count=154 sha256=5e29a12b62b905f9aec96fb49c475203df2bca88342f3eba821e8f90dd5af2f3"
 ],
 "finish-repeat-condensation-skipped": [
 "compress attempt=1",
@@ -4776,6 +4820,7 @@
 "message user 066515930aa9/4751",
 "message user a036540eca3b/1267",
 "message assistant 5af94fa49bf3/1266",
+"attr _cold_threshold_retry=false",
 "attr _compress_escaped=[]",
 "attr _compress_forced_overflow=false",
 "attr _compress_hidden_rows_consumed=0",
@@ -4810,7 +4855,7 @@
 "attr _uid_sparse_coverage=false",
 "attr _uid_superseded_store_ids=[]",
 "attr compression_count=1",
-"attrs count=153 sha256=bc7770131324dde552a21763a23c6b932551f13e17a9969173e7a836e91c5416"
+"attrs count=154 sha256=ab99fef11fc5a45b519766bc4a1f639c59c6232bcf62df97338d6eb1fc25709c"
 ],
 "forced-overflow": [
 "compress attempt=1",
@@ -4886,6 +4931,7 @@
 "assemble",
 "message system 6a97437a05d4/508",
 "message user 67e4e8b1c7a0/112",
+"attr _cold_threshold_retry=false",
 "attr _compress_escaped=[]",
 "attr _compress_forced_overflow=true",
 "attr _compress_hidden_rows_consumed=0",
@@ -4919,7 +4965,7 @@
 "attr _uid_sparse_coverage=false",
 "attr _uid_superseded_store_ids=[]",
 "attr compression_count=1",
-"attrs count=153 sha256=fe2a0241eb76ac3d92bfc3c14c4b3de23de8b3963e0cc44f90c5301beb35e690"
+"attrs count=154 sha256=1f1bf291ae5a0206088908399b9bbaa677bb89025b6215235a4ebf54d418a82a"
 ],
 "fresh-tail-protected": [
 "compress attempt=1",
@@ -4964,6 +5010,7 @@
 "message system 6a97437a05d4/508",
 "message user 3966be03c944/1267",
 "message assistant 7a468e7d082c/1266",
+"attr _cold_threshold_retry=false",
 "attr _compress_escaped=[]",
 "attr _compress_forced_overflow=false",
 "attr _compress_hidden_rows_consumed=0",
@@ -4983,7 +5030,7 @@
 "attr _pending_emission_candidates=[]",
 "attr _store=sha12/len=ea1402633a11/3476",
 "attr _survival_pass_observed=true",
-"attrs count=153 sha256=bacb8e12420bc3dcef5ca0fe911d5ca37a49df4f129f1b8a8508dcdf1328d3ad"
+"attrs count=154 sha256=ca92699636b99868ba8b984c4cc963d4c80ab5b9319c7b3610f530f4e560b081"
 ],
 "fresh-tail-yield": [
 "compress attempt=1",
@@ -5077,6 +5124,7 @@
 "message assistant 7c6b372997fd/1266",
 "message user a036540eca3b/1267",
 "message assistant 5af94fa49bf3/1266",
+"attr _cold_threshold_retry=false",
 "attr _compress_escaped=[]",
 "attr _compress_forced_overflow=false",
 "attr _compress_hidden_rows_consumed=0",
@@ -5109,7 +5157,7 @@
 "attr _uid_sparse_coverage=false",
 "attr _uid_superseded_store_ids=[]",
 "attr compression_count=1",
-"attrs count=153 sha256=b0184143c827d46d4f37bc76be28d3fcf06130e0ca47ef571a92ab5609b32f57"
+"attrs count=154 sha256=b3f5e03f5767d6785ae30bead4909c01e12c7d5c8304053b3d287557e6bba357"
 ],
 "generated-dependent-replies": [
 "compress attempt=1",
@@ -5183,6 +5231,7 @@
 "message assistant 7c6b372997fd/1266",
 "message user a036540eca3b/1267",
 "message assistant 5af94fa49bf3/1266",
+"attr _cold_threshold_retry=false",
 "attr _compress_escaped=[]",
 "attr _compress_forced_overflow=false",
 "attr _compress_hidden_rows_consumed=0",
@@ -5212,7 +5261,7 @@
 "attr _uid_sparse_coverage=false",
 "attr _uid_superseded_store_ids=[]",
 "attr compression_count=1",
-"attrs count=153 sha256=fc5e551b72757c79cd8d2c2ce5ecdb946247c999df027e7a0c0a92e602eaa035"
+"attrs count=154 sha256=f9eb50994853a36f97ae02d829c5ab64d1589a8d77b9cd5eb249499460031562"
 ],
 "hidden-owned-backlog": [
 "compress attempt=1",
@@ -5249,6 +5298,7 @@
 "message user e2d650caf507/226",
 "message user a036540eca3b/1267",
 "message assistant 5af94fa49bf3/1266",
+"attr _cold_threshold_retry=false",
 "attr _compress_escaped=[]",
 "attr _compress_forced_overflow=false",
 "attr _compress_hidden_rows_consumed=2",
@@ -5280,7 +5330,7 @@
 "attr _uid_sparse_coverage=false",
 "attr _uid_superseded_store_ids=[]",
 "attr compression_count=1",
-"attrs count=153 sha256=34448112f6b5252a863a437a5487c04310b0adb49f7d007ec24e10b2ec3a1d14"
+"attrs count=154 sha256=e3ec356c894581591bdcb2942d4fd9a09e3ac2b58dc97263d1ae77c1749f971e"
 ],
 "hold-fit-only": [
 "compress attempt=1",
@@ -5352,6 +5402,7 @@
 "message assistant 7c6b372997fd/1266",
 "message user a036540eca3b/1267",
 "message assistant 5af94fa49bf3/1266",
+"attr _cold_threshold_retry=false",
 "attr _compaction_request=sha12/len=843254abdb56/159",
 "attr _compress_escaped=[]",
 "attr _compress_forced_overflow=false",
@@ -5368,7 +5419,7 @@
 "attr _pending_emission_candidates=[]",
 "attr _store=sha12/len=f8618c558404/25548",
 "attr _survival_pass_observed=true",
-"attrs count=153 sha256=3dcc566c6aa657bf79a23807cc8e2fc2d5ffe8e333522b909309b3df84b09e64"
+"attrs count=154 sha256=87b76bc7f4e64ee452fe7bbd529d6a68d508a012b5cf4e772b93ec9143e70db4"
 ],
 "hung-primary-leaves-fallback": [
 "compress attempt=1",
@@ -5446,6 +5497,7 @@
 "message assistant 7c6b372997fd/1266",
 "message user a036540eca3b/1267",
 "message assistant 5af94fa49bf3/1266",
+"attr _cold_threshold_retry=false",
 "attr _compress_escaped=[]",
 "attr _compress_forced_overflow=false",
 "attr _compress_hidden_rows_consumed=0",
@@ -5478,7 +5530,7 @@
 "attr _uid_source_bindings={}",
 "attr _uid_sparse_coverage=false",
 "attr _uid_superseded_store_ids=[]",
-"attrs count=153 sha256=23e675b4ef69586b4cad83283485bfe9d47c1a62e6509329d70520ae26591247"
+"attrs count=154 sha256=8b59bc1d66de361d447c9bd8435701d6c406f517adff8644c3bff6b4f1e65ab2"
 ],
 "identity-anchor": [
 "compress attempt=1",
@@ -5569,6 +5621,7 @@
 "message assistant 7c6b372997fd/1266",
 "message user a036540eca3b/1267",
 "message assistant 5af94fa49bf3/1266",
+"attr _cold_threshold_retry=false",
 "attr _compress_escaped=[]",
 "attr _compress_forced_overflow=false",
 "attr _compress_hidden_rows_consumed=0",
@@ -5601,7 +5654,7 @@
 "attr _uid_sparse_coverage=false",
 "attr _uid_superseded_store_ids=[]",
 "attr compression_count=1",
-"attrs count=153 sha256=842c6da1c96650e7ad7154fed5c465c45801dd63dd3be5762bd349e66bce9faa"
+"attrs count=154 sha256=768e93f827ea418f80cf96ecbe8e1a07274259e1893e7d263c70d07e85540e30"
 ],
 "identity-anchor-disabled": [
 "compress attempt=1",
@@ -5682,6 +5735,7 @@
 "message assistant 7c6b372997fd/1266",
 "message user a036540eca3b/1267",
 "message assistant 5af94fa49bf3/1266",
+"attr _cold_threshold_retry=false",
 "attr _compress_escaped=[]",
 "attr _compress_forced_overflow=false",
 "attr _compress_hidden_rows_consumed=0",
@@ -5711,7 +5765,7 @@
 "attr _store_complete_order={}",
 "attr _survival_pass_observed=true",
 "attr compression_count=1",
-"attrs count=153 sha256=3e3e94e9a045b514ee7ef98c86cbfa06635ca334d861e4d0a69b28022d7d3955"
+"attrs count=154 sha256=7ab472a0316592a94fd945b5fd4d8a3ba7f06cf98e5fd744f8bc527b51049576"
 ],
 "ignored-bypass-missing": [
 "compress attempt=1",
@@ -5766,6 +5820,7 @@
 "message assistant 7c6b372997fd/1266",
 "message user a036540eca3b/1267",
 "message assistant 5af94fa49bf3/1266",
+"attr _cold_threshold_retry=false",
 "attr _compaction_request=sha12/len=843254abdb56/159",
 "attr _compress_escaped=[]",
 "attr _compress_hidden_rows_consumed=0",
@@ -5774,7 +5829,7 @@
 "attr _last_compression_noop_reason=\"LCM bypassed below threshold: ignored session\"",
 "attr _last_compression_status=\"noop\"",
 "attr _pending_emission_candidates=[]",
-"attrs count=153 sha256=a1553e81af2ba3705b838a59899e7df68d73f467f65c7a507aadf771693144bc"
+"attrs count=154 sha256=1b0f38184885464d50959477b68fc5d630322853445ec043aa18d5eb19482409"
 ],
 "ignored-bypass-negative": [
 "compress attempt=1",
@@ -5829,6 +5884,7 @@
 "message assistant 7c6b372997fd/1266",
 "message user a036540eca3b/1267",
 "message assistant 5af94fa49bf3/1266",
+"attr _cold_threshold_retry=false",
 "attr _compaction_request=sha12/len=843254abdb56/159",
 "attr _compress_escaped=[]",
 "attr _compress_hidden_rows_consumed=0",
@@ -5837,7 +5893,7 @@
 "attr _last_compression_noop_reason=\"LCM bypassed below threshold: ignored session\"",
 "attr _last_compression_status=\"noop\"",
 "attr _pending_emission_candidates=[]",
-"attrs count=153 sha256=a1553e81af2ba3705b838a59899e7df68d73f467f65c7a507aadf771693144bc"
+"attrs count=154 sha256=1b0f38184885464d50959477b68fc5d630322853445ec043aa18d5eb19482409"
 ],
 "ignored-bypass-zero": [
 "compress attempt=1",
@@ -5892,6 +5948,7 @@
 "message assistant 7c6b372997fd/1266",
 "message user a036540eca3b/1267",
 "message assistant 5af94fa49bf3/1266",
+"attr _cold_threshold_retry=false",
 "attr _compaction_request=sha12/len=843254abdb56/159",
 "attr _compress_escaped=[]",
 "attr _compress_hidden_rows_consumed=0",
@@ -5900,7 +5957,7 @@
 "attr _last_compression_noop_reason=\"LCM bypassed below threshold: ignored session\"",
 "attr _last_compression_status=\"noop\"",
 "attr _pending_emission_candidates=[]",
-"attrs count=153 sha256=a1553e81af2ba3705b838a59899e7df68d73f467f65c7a507aadf771693144bc"
+"attrs count=154 sha256=1b0f38184885464d50959477b68fc5d630322853445ec043aa18d5eb19482409"
 ],
 "ignored-dependent-tail-eof": [
 "compress attempt=1",
@@ -5930,6 +5987,7 @@
 "assemble",
 "message system 6a97437a05d4/508",
 "message assistant ca513cb8653a/2522",
+"attr _cold_threshold_retry=false",
 "attr _compress_dropped_ignored_rows=true",
 "attr _compress_escaped=[]",
 "attr _compress_forced_overflow=false",
@@ -5947,7 +6005,7 @@
 "attr _no_progress_public_rows=sha12/len=a1311241116e/3987",
 "attr _pending_emission_candidates=[]",
 "attr _survival_pass_observed=true",
-"attrs count=153 sha256=75db774213d59a96f32b32fb1fc2e24255b87c2d0d33d35b79a8fd7f986752ff"
+"attrs count=154 sha256=7c2e8d8fd94d7b4693ea1edd0246b60ed83dbe2b337b6ea8b00e700d00ad64d9"
 ],
 "ignored-message-dependents": [
 "compress attempt=1",
@@ -6049,6 +6107,7 @@
 "message assistant 7c6b372997fd/1266",
 "message user a036540eca3b/1267",
 "message assistant 5af94fa49bf3/1266",
+"attr _cold_threshold_retry=false",
 "attr _compress_dropped_ignored_rows=true",
 "attr _compress_escaped=[]",
 "attr _compress_forced_overflow=false",
@@ -6082,7 +6141,7 @@
 "attr _uid_sparse_coverage=false",
 "attr _uid_superseded_store_ids=[]",
 "attr compression_count=1",
-"attrs count=153 sha256=9afea57e8c61b726fd428aff80cd03e14a5b36ec9958942ecf54697803b125c5"
+"attrs count=154 sha256=26e2cfbf96d0de41b5a26bfef47de45627353b6ec18e48d7ffb6f505b8ab3ef3"
 ],
 "ignored-tail-nondict-barrier": [
 "compress attempt=1",
@@ -6091,13 +6150,14 @@
 "non-dict tail: token counting rejects input before ingestion and leaf phases",
 "leaf_prep after {\"chain\":[],\"counters\":{}}",
 "assemble raise AttributeError",
+"attr _cold_threshold_retry=false",
 "attr _compress_escaped=[]",
 "attr _compress_hidden_rows_consumed=0",
 "attr _compress_host_rows_consumed=0",
 "attr _foreground_budget=sha12/len=a4ce1981038b/351",
 "attr _last_compression_status=\"running\"",
 "attr _survival_pass_observed=true",
-"attrs count=153 sha256=709becb43b4c717222e780cb03da662eeb3edc6f3ea1c70e49a98fab5ad8bc9e"
+"attrs count=154 sha256=e89428ff506858a093dda9c27fb5addf594d8b7aed73ddb87e64a1c93cf3d70b"
 ],
 "ignored-tail-unanchored-eof": [
 "compress attempt=1",
@@ -6125,6 +6185,7 @@
 "return []",
 "leaf_prep after {\"chain\":[],\"counters\":{}}",
 "assemble",
+"attr _cold_threshold_retry=false",
 "attr _compress_dropped_ignored_rows=true",
 "attr _compress_escaped=[]",
 "attr _compress_forced_overflow=false",
@@ -6142,7 +6203,7 @@
 "attr _no_progress_public_rows=sha12/len=919971a2eae2/3917",
 "attr _pending_emission_candidates=[]",
 "attr _survival_pass_observed=true",
-"attrs count=153 sha256=7ea61378ab9d4788ca63504b68ab942ca663a0e09e1c3ad98dc7e25b458e689c"
+"attrs count=154 sha256=cd94209bb7283a6d04b51b1faafb8f5029e48a0710f2b6cd8d2666b74f6f281c"
 ],
 "ignored-tail-unknown-role": [
 "compress attempt=1",
@@ -6205,6 +6266,7 @@
 "message assistant 77fdf0492e9a/2533",
 "message unknown c992ea3b143b/22",
 "message assistant 5af94fa49bf3/1266",
+"attr _cold_threshold_retry=false",
 "attr _compress_dropped_ignored_rows=true",
 "attr _compress_escaped=[]",
 "attr _compress_forced_overflow=false",
@@ -6237,7 +6299,7 @@
 "attr _uid_sparse_coverage=false",
 "attr _uid_superseded_store_ids=[]",
 "attr compression_count=1",
-"attrs count=153 sha256=7a20593be79b8f819158f3c146c361c45fefef85323fc15b918fc68448bc4b04"
+"attrs count=154 sha256=8e1abb662fce42f7f51616de4bd9fd2d532be5d0a96401e9dda0e58f493f6c4f"
 ],
 "ignored-unknown-role": [
 "compress attempt=1",
@@ -6295,6 +6357,7 @@
 "message assistant 7c6b372997fd/1266",
 "message user a036540eca3b/1267",
 "message assistant 5af94fa49bf3/1266",
+"attr _cold_threshold_retry=false",
 "attr _compress_dropped_ignored_rows=true",
 "attr _compress_escaped=[]",
 "attr _compress_forced_overflow=false",
@@ -6327,7 +6390,7 @@
 "attr _uid_sparse_coverage=false",
 "attr _uid_superseded_store_ids=[]",
 "attr compression_count=1",
-"attrs count=153 sha256=b245272eed43c79692cad752d2ae50a49dbf923cfbe51390e8fd5c811181feb2"
+"attrs count=154 sha256=bb33b170a84c878c72a3126ff3021f7d9b9600656ff8483cf0f9c90ba972ce95"
 ],
 "leaf-automatic-no-sweep": [
 "compress attempt=1",
@@ -6418,6 +6481,7 @@
 "message assistant 7c6b372997fd/1266",
 "message user a036540eca3b/1267",
 "message assistant 5af94fa49bf3/1266",
+"attr _cold_threshold_retry=false",
 "attr _compress_escaped=[]",
 "attr _compress_forced_overflow=false",
 "attr _compress_hidden_rows_consumed=0",
@@ -6450,7 +6514,7 @@
 "attr _uid_sparse_coverage=false",
 "attr _uid_superseded_store_ids=[]",
 "attr compression_count=1",
-"attrs count=153 sha256=e7456092bc663729c3ceec92ac1df1b5b8823d34bb13a55034a4c146f152a12c"
+"attrs count=154 sha256=f55b453da556e7cd9480850dd1a2481c8ff70eebb3db3675a7bebcd49380de8b"
 ],
 "leaf-no-host-token-count": [
 "compress attempt=1",
@@ -6541,6 +6605,7 @@
 "message assistant 7c6b372997fd/1266",
 "message user a036540eca3b/1267",
 "message assistant 5af94fa49bf3/1266",
+"attr _cold_threshold_retry=false",
 "attr _compress_escaped=[]",
 "attr _compress_forced_overflow=false",
 "attr _compress_hidden_rows_consumed=0",
@@ -6572,7 +6637,7 @@
 "attr _uid_sparse_coverage=false",
 "attr _uid_superseded_store_ids=[]",
 "attr compression_count=1",
-"attrs count=153 sha256=6129af16c8ec6ef3880840415bfd6221f649cb98c59ec82074dd62c9613e9d5a"
+"attrs count=154 sha256=6bd0cac9e4d892f8362170d82cfc5da41ff80c0c8b4361afdbe5cddfdd8775c6"
 ],
 "leaf-pass": [
 "compress attempt=1",
@@ -6663,6 +6728,7 @@
 "message assistant 7c6b372997fd/1266",
 "message user a036540eca3b/1267",
 "message assistant 5af94fa49bf3/1266",
+"attr _cold_threshold_retry=false",
 "attr _compress_escaped=[]",
 "attr _compress_forced_overflow=false",
 "attr _compress_hidden_rows_consumed=0",
@@ -6695,7 +6761,7 @@
 "attr _uid_sparse_coverage=false",
 "attr _uid_superseded_store_ids=[]",
 "attr compression_count=1",
-"attrs count=153 sha256=47201bf46c1983da98b942e85a93b1f99f6ef19c6d03a04a1ed8fe4f1191eab0"
+"attrs count=154 sha256=684bd267b218339a7bfaf78e05529f60c7b7f219513ff35ea5df34593a437839"
 ],
 "leaf-phase-budget-after-leaf": [
 "compress attempt=1",
@@ -6794,6 +6860,7 @@
 "message assistant 7c6b372997fd/1266",
 "message user a036540eca3b/1267",
 "message assistant 5af94fa49bf3/1266",
+"attr _cold_threshold_retry=false",
 "attr _compress_escaped=[]",
 "attr _compress_forced_overflow=false",
 "attr _compress_hidden_rows_consumed=0",
@@ -6831,7 +6898,7 @@
 "attr _uid_sparse_coverage=false",
 "attr _uid_superseded_store_ids=[]",
 "attr compression_count=1",
-"attrs count=153 sha256=97c0c5e2ea60ebd4d5471d1eef53c9cc8da4c914fa0babc22c87084c3c35582a"
+"attrs count=154 sha256=db7f82de8bb7beac4bb14aeb7b66feb914ab7370e93135af9476d02caa9e7c94"
 ],
 "leaf-phase-data-error-after": [
 "compress attempt=1",
@@ -6932,6 +6999,7 @@
 "message assistant 7c6b372997fd/1266",
 "message user a036540eca3b/1267",
 "message assistant 5af94fa49bf3/1266",
+"attr _cold_threshold_retry=false",
 "attr _compress_escaped=[]",
 "attr _compress_forced_overflow=false",
 "attr _compress_hidden_rows_consumed=0",
@@ -6965,7 +7033,7 @@
 "attr _uid_sparse_coverage=false",
 "attr _uid_superseded_store_ids=[]",
 "attr compression_count=1",
-"attrs count=153 sha256=8e877785c7580a4b47dc13922542329e91f8d4eb679114680917c4a3288e204b"
+"attrs count=154 sha256=1a255a9cf796e6012ace986aef51bf5fbdb387b9e753d44d00a5a6ac5eb1d96f"
 ],
 "leaf-phase-data-error-before": [
 "compress attempt=1",
@@ -7043,6 +7111,7 @@
 "message assistant 7c6b372997fd/1266",
 "message user a036540eca3b/1267",
 "message assistant 5af94fa49bf3/1266",
+"attr _cold_threshold_retry=false",
 "attr _compress_escaped=[]",
 "attr _compress_forced_overflow=false",
 "attr _compress_hidden_rows_consumed=0",
@@ -7070,7 +7139,7 @@
 "attr _uid_source_bindings={}",
 "attr _uid_sparse_coverage=false",
 "attr _uid_superseded_store_ids=[]",
-"attrs count=153 sha256=34566ecaae7e1ea272d24ba069bdb3876ffb3d550fdd481a5e002ed2e57276f8"
+"attrs count=154 sha256=abbd47d428c03ec6dae70b15dded690132c8f43505da2ad0e496adcf69cb6382"
 ],
 "leaf-phase-dependent": [
 "compress attempt=1",
@@ -7115,6 +7184,7 @@
 "message user c29960ce771a/146",
 "message user b3e9e4ecee67/14",
 "message assistant 6a500e118d1f/14",
+"attr _cold_threshold_retry=false",
 "attr _compress_escaped=[]",
 "attr _compress_forced_overflow=false",
 "attr _compress_hidden_rows_consumed=0",
@@ -7140,7 +7210,7 @@
 "attr _store_complete_order={}",
 "attr _survival_pass_observed=true",
 "attr compression_count=1",
-"attrs count=153 sha256=63b085e7551454b9c64b9bb9ba92322d8d6520a0358b3af028864d414c858601"
+"attrs count=154 sha256=61b418eccbec37fae2d86872c67619732191030f2355b5ea73f7001661c22f0c"
 ],
 "leaf-phase-lineage-moved": [
 "compress attempt=1",
@@ -7222,6 +7292,7 @@
 "message assistant 7c6b372997fd/1266",
 "message user a036540eca3b/1267",
 "message assistant 5af94fa49bf3/1266",
+"attr _cold_threshold_retry=false",
 "attr _compress_escaped=[]",
 "attr _compress_forced_overflow=false",
 "attr _compress_hidden_rows_consumed=0",
@@ -7253,7 +7324,7 @@
 "attr _uid_sparse_coverage=false",
 "attr _uid_superseded_store_ids=[]",
 "attr _unattributed_leaf_warned=[[\"trace-conversation\",0]]",
-"attrs count=153 sha256=a39cbcaa645fccb7bf8e7991e74057ec087c8b1694587c174961b8aadce55509"
+"attrs count=154 sha256=c08e0654b8a04a071ddb0b4324f6dfd37ef72ce4d2a5db9547690249335eb4ca"
 ],
 "leaf-phase-no-call-stop": [
 "compress attempt=1",
@@ -7327,6 +7398,7 @@
 "message assistant 7c6b372997fd/1266",
 "message user a036540eca3b/1267",
 "message assistant 5af94fa49bf3/1266",
+"attr _cold_threshold_retry=false",
 "attr _compress_escaped=[]",
 "attr _compress_forced_overflow=false",
 "attr _compress_hidden_rows_consumed=0",
@@ -7356,7 +7428,7 @@
 "attr _uid_source_bindings={}",
 "attr _uid_sparse_coverage=false",
 "attr _uid_superseded_store_ids=[]",
-"attrs count=153 sha256=4ce73abe8c0d6c11da2679f5fce8cb78168ae6e4e814edcabd71cc5d1f003ea0"
+"attrs count=154 sha256=0422d3001daa3b15b51f5be16d6a3c932683baadcde1099dcd438b969a6a4e7f"
 ],
 "leaf-phase-raise-cleanup": [
 "compress attempt=1",
@@ -7430,6 +7502,7 @@
 "message assistant 7c6b372997fd/1266",
 "message user a036540eca3b/1267",
 "message assistant 5af94fa49bf3/1266",
+"attr _cold_threshold_retry=false",
 "attr _compress_escaped=[]",
 "attr _compress_forced_overflow=false",
 "attr _compress_hidden_rows_consumed=0",
@@ -7457,7 +7530,7 @@
 "attr _uid_source_bindings={}",
 "attr _uid_sparse_coverage=false",
 "attr _uid_superseded_store_ids=[]",
-"attrs count=153 sha256=be0538bf7bedd6ecc097cd44ac95437ba5d010700da0a8f9517ce85d29bd5074"
+"attrs count=154 sha256=c85c32b3d7afb66e70e007e0eccec202c1fab3a103806a724acfa9480d397474"
 ],
 "leaf-phase-rescue-keeps": [
 "compress attempt=1",
@@ -7532,6 +7605,7 @@
 "message assistant 5c7d7e8030b9/1267",
 "message user 1be0acff385d/1268",
 "message assistant 56ea567a39db/1267",
+"attr _cold_threshold_retry=false",
 "attr _compress_escaped=[]",
 "attr _compress_forced_overflow=false",
 "attr _compress_hidden_rows_consumed=8",
@@ -7561,7 +7635,7 @@
 "attr _uid_sparse_coverage=false",
 "attr _uid_superseded_store_ids=[]",
 "attr compression_count=1",
-"attrs count=153 sha256=d8cea3317b4129bf922a67c02f8e27355a7b44d56c376c9be5a9a365e70e41f9"
+"attrs count=154 sha256=6f7c4d9bfeb2477eb033b4cd25b6dd0f7c0efeb79dae2b8eb4dc52d3f56d2adc"
 ],
 "leaf-phase-rescue-loses": [
 "compress attempt=1",
@@ -7661,6 +7735,7 @@
 "message assistant 8f9e1cce13da/1257",
 "message user 1c3f83b39131/1252",
 "message assistant 7ff4e93a2069/1257",
+"attr _cold_threshold_retry=false",
 "attr _compress_escaped=[]",
 "attr _compress_forced_overflow=false",
 "attr _compress_hidden_rows_consumed=0",
@@ -7692,7 +7767,7 @@
 "attr _uid_sparse_coverage=true",
 "attr _uid_superseded_store_ids=[]",
 "attr compression_count=1",
-"attrs count=153 sha256=acbc2679690a071862ac7db3d3adc01a8e8dcded85a6eccdc36242f47bf8d194"
+"attrs count=154 sha256=1aecc43beb31fd84c72554bb51dbbad7338e38103787716861ab5f81dda8679d"
 ],
 "leaf-phase-soft-extraction": [
 "compress attempt=1",
@@ -7843,6 +7918,7 @@
 "message user c9c175d956bb/826",
 "message user a036540eca3b/1267",
 "message assistant 5af94fa49bf3/1266",
+"attr _cold_threshold_retry=false",
 "attr _compress_escaped=[]",
 "attr _compress_forced_overflow=false",
 "attr _compress_hidden_rows_consumed=0",
@@ -7877,7 +7953,7 @@
 "attr _uid_sparse_coverage=false",
 "attr _uid_superseded_store_ids=[]",
 "attr compression_count=1",
-"attrs count=153 sha256=178000b2fca27c81d57615293017a59e31aa739adbaed67245a905ec4abb6089"
+"attrs count=154 sha256=73ac2103f115651aceb0df82b5d514ba532cd165f3938869d778d562372996a2"
 ],
 "legacy-filtered-backlog": [
 "compress attempt=1",
@@ -7938,6 +8014,7 @@
 "message assistant 7c6b372997fd/1266",
 "message user a036540eca3b/1267",
 "message assistant 5af94fa49bf3/1266",
+"attr _cold_threshold_retry=false",
 "attr _compress_dropped_ignored_rows=true",
 "attr _compress_escaped=[]",
 "attr _compress_forced_overflow=false",
@@ -7970,7 +8047,7 @@
 "attr _uid_sparse_coverage=false",
 "attr _uid_superseded_store_ids=[]",
 "attr compression_count=1",
-"attrs count=153 sha256=cca8002ec5af80e2b450c2ee59798413ee28b56b8cc29fb4982a49fc703e42bc"
+"attrs count=154 sha256=b4b58cba2632a25e1acc7583be9e341bc141be7c0ac2a4a3ac8242876be26054"
 ],
 "legacy-filtered-eof-dependents": [
 "compress attempt=1",
@@ -8028,6 +8105,7 @@
 "message user 848f65aa4811/1267",
 "message user a036540eca3b/1267",
 "message assistant 5af94fa49bf3/1266",
+"attr _cold_threshold_retry=false",
 "attr _compress_dropped_ignored_rows=true",
 "attr _compress_escaped=[]",
 "attr _compress_forced_overflow=false",
@@ -8060,7 +8138,7 @@
 "attr _uid_sparse_coverage=false",
 "attr _uid_superseded_store_ids=[]",
 "attr compression_count=1",
-"attrs count=153 sha256=75c71cfaa4f73bb11138025f3884b69d96a5f57987d0b8ad8e016b2ea242b035"
+"attrs count=154 sha256=726119652cae2f62145bd9b9da8557b0a7913995e9c1476b746db1b3148bac59"
 ],
 "legacy-filtered-tail-dependents": [
 "compress attempt=1",
@@ -8118,6 +8196,7 @@
 "message assistant 7c6b372997fd/1266",
 "message user a036540eca3b/1267",
 "message assistant 5af94fa49bf3/1266",
+"attr _cold_threshold_retry=false",
 "attr _compress_dropped_ignored_rows=true",
 "attr _compress_escaped=[]",
 "attr _compress_forced_overflow=false",
@@ -8150,7 +8229,7 @@
 "attr _uid_sparse_coverage=false",
 "attr _uid_superseded_store_ids=[]",
 "attr compression_count=1",
-"attrs count=153 sha256=634ce8a4cd428c9661e94447b1f90c80e5f3665e561d566db35a3aa16543cfc2"
+"attrs count=154 sha256=869d0806944696e750f1af6a2c889ce9bf0d0e7a37f949ea4fc536d05e4cee98"
 ],
 "lifecycle-publication-conflict": [
 "compress attempt=1",
@@ -8235,6 +8314,7 @@
 "message assistant 7c6b372997fd/1266",
 "message user a036540eca3b/1267",
 "message assistant 5af94fa49bf3/1266",
+"attr _cold_threshold_retry=false",
 "attr _compress_escaped=[]",
 "attr _compress_forced_overflow=false",
 "attr _compress_hidden_rows_consumed=0",
@@ -8265,7 +8345,7 @@
 "attr _uid_source_bindings={}",
 "attr _uid_sparse_coverage=false",
 "attr _uid_superseded_store_ids=[]",
-"attrs count=153 sha256=599cf146cf348e6f0365fa7fd66ae4fc43ef05e2590f734b0f8d4b2fc3a37243"
+"attrs count=154 sha256=ce31ec56f630fbba8bc6ce77aad65d156c5a09aec124d544e4b5e842fbce9d8e"
 ],
 "no-system-prompt": [
 "compress attempt=1",
@@ -8346,6 +8426,7 @@
 "message assistant 7c6b372997fd/1266",
 "message user a036540eca3b/1267",
 "message assistant 5af94fa49bf3/1266",
+"attr _cold_threshold_retry=false",
 "attr _compress_escaped=[]",
 "attr _compress_forced_overflow=false",
 "attr _compress_hidden_rows_consumed=0",
@@ -8378,7 +8459,7 @@
 "attr _uid_sparse_coverage=false",
 "attr _uid_superseded_store_ids=[]",
 "attr compression_count=1",
-"attrs count=153 sha256=f088caef02f02b9ad6090339da1d42848e782f3051bf9a989c828f6d28264bbd"
+"attrs count=154 sha256=95256097c5952103bbf77b41d83e34062b3b603479a89cf25c9dc2c4134b3c0c"
 ],
 "objective-anchor": [
 "compress attempt=1",
@@ -8425,6 +8506,7 @@
 "message tool b418dd6b02ab/1600",
 "message assistant b61a04d6dd7e/1600",
 "message tool b3f7e026a84f/1600",
+"attr _cold_threshold_retry=false",
 "attr _compress_escaped=[]",
 "attr _compress_forced_overflow=false",
 "attr _compress_hidden_rows_consumed=0",
@@ -8444,7 +8526,7 @@
 "attr _pending_emission_candidates=[]",
 "attr _store=sha12/len=25ee3a20c4e0/15841",
 "attr _survival_pass_observed=true",
-"attrs count=153 sha256=59d9389d6c44b0b36a550935b747d92771c24d10a7e7eadf2bbad39d1262abf6"
+"attrs count=154 sha256=9f625f1904b69931cc5e7f220464ef8f0fb1701fceff2cb054ec12a0948ab3b9"
 ],
 "objective-cap-too-small": [
 "compress attempt=1",
@@ -8497,6 +8579,7 @@
 "return []",
 "leaf_prep after {\"chain\":[],\"counters\":{}}",
 "assemble",
+"attr _cold_threshold_retry=false",
 "attr _compress_escaped=[]",
 "attr _compress_forced_overflow=true",
 "attr _compress_hidden_rows_consumed=0",
@@ -8528,7 +8611,7 @@
 "attr _uid_sparse_coverage=false",
 "attr _uid_superseded_store_ids=[]",
 "attr compression_count=1",
-"attrs count=153 sha256=3dcc41839a1ebd9bcad8388bc4c0a6e71de4c55d3321a3bb423cb40b3d04045f"
+"attrs count=154 sha256=46076d93637c0a6a0fa107d20b5da652ee8f81e5fcd44f5ee433aefb0e4aa297"
 ],
 "objective-without-cap": [
 "compress attempt=1",
@@ -8575,6 +8658,7 @@
 "message tool b418dd6b02ab/1600",
 "message assistant b61a04d6dd7e/1600",
 "message tool b3f7e026a84f/1600",
+"attr _cold_threshold_retry=false",
 "attr _compress_escaped=[]",
 "attr _compress_forced_overflow=false",
 "attr _compress_hidden_rows_consumed=0",
@@ -8594,7 +8678,7 @@
 "attr _pending_emission_candidates=[]",
 "attr _store=sha12/len=25ee3a20c4e0/15841",
 "attr _survival_pass_observed=true",
-"attrs count=153 sha256=a2f404968dfc8effe3b3375ff55ed814b7fcf24c3ad45f585d070354e5050002"
+"attrs count=154 sha256=98bff616941ea9105516089570c82e7d45ffbae69beebde374a935f3a087e30d"
 ],
 "optional-extraction-host-unavailable": [
 "compress attempt=1",
@@ -8699,6 +8783,7 @@
 "message assistant 7c6b372997fd/1266",
 "message user a036540eca3b/1267",
 "message assistant 5af94fa49bf3/1266",
+"attr _cold_threshold_retry=false",
 "attr _compress_escaped=[]",
 "attr _compress_forced_overflow=false",
 "attr _compress_hidden_rows_consumed=0",
@@ -8731,7 +8816,7 @@
 "attr _uid_sparse_coverage=false",
 "attr _uid_superseded_store_ids=[]",
 "attr compression_count=1",
-"attrs count=153 sha256=20442f897cb514808a35dc5c1784834d2c4f15ba6ef7272a6631480bb8e87a36"
+"attrs count=154 sha256=6c15661668e58b8e7aa9b34c612920122233c8bd36a24ec182b1f73bab0997fe"
 ],
 "persisted-volatile-no-pattern": [
 "compress attempt=1",
@@ -8789,6 +8874,7 @@
 "message assistant 7c6b372997fd/1266",
 "message user a036540eca3b/1267",
 "message assistant 5af94fa49bf3/1266",
+"attr _cold_threshold_retry=false",
 "attr _compress_dropped_ignored_rows=true",
 "attr _compress_escaped=[]",
 "attr _compress_forced_overflow=false",
@@ -8821,7 +8907,7 @@
 "attr _uid_sparse_coverage=false",
 "attr _uid_superseded_store_ids=[]",
 "attr compression_count=1",
-"attrs count=153 sha256=4a6eac8af42b4b36889063581bf093e97a95cfab623fd98aa03a687a265a0588"
+"attrs count=154 sha256=4ac88aee246668563ac329a768ec3389bcc799d33a59cc91cf03cbb80e08f191"
 ],
 "post-leaf-condensation-rejected": [
 "compress attempt=1",
@@ -8955,6 +9041,7 @@
 "message user c9c175d956bb/826",
 "message user a036540eca3b/1267",
 "message assistant 5af94fa49bf3/1266",
+"attr _cold_threshold_retry=false",
 "attr _compress_escaped=[]",
 "attr _compress_forced_overflow=false",
 "attr _compress_hidden_rows_consumed=0",
@@ -8989,7 +9076,7 @@
 "attr _uid_sparse_coverage=false",
 "attr _uid_superseded_store_ids=[]",
 "attr compression_count=1",
-"attrs count=153 sha256=f2ec646750b6604b9ae64d3f7c3caf12c93e793f246b00fd3e658f205cdf103d"
+"attrs count=154 sha256=f02a0c75becb7e8db7ec6b05aabfc2d1981a5e3d56d27eb470d4bb9a296b3fb0"
 ],
 "post-leaf-publication-conflict": [
 "compress attempt=1",
@@ -9095,6 +9182,7 @@
 "message assistant 7c6b372997fd/1266",
 "message user a036540eca3b/1267",
 "message assistant 5af94fa49bf3/1266",
+"attr _cold_threshold_retry=false",
 "attr _compress_escaped=[]",
 "attr _compress_forced_overflow=false",
 "attr _compress_hidden_rows_consumed=0",
@@ -9129,7 +9217,7 @@
 "attr _uid_source_bindings={}",
 "attr _uid_sparse_coverage=false",
 "attr _uid_superseded_store_ids=[]",
-"attrs count=153 sha256=a09677d08ce79296b8508288565b085751140279d2fca3975eec4ee41208ab03"
+"attrs count=154 sha256=cf03c9365084614101a46e48f632345c5a32e36987cdd443f54927f25956038f"
 ],
 "pre-leaf-condensation-rejected": [
 "compress attempt=1",
@@ -9211,6 +9299,7 @@
 "message assistant 7c6b372997fd/1266",
 "message user a036540eca3b/1267",
 "message assistant 5af94fa49bf3/1266",
+"attr _cold_threshold_retry=false",
 "attr _compress_escaped=[]",
 "attr _compress_forced_overflow=false",
 "attr _compress_hidden_rows_consumed=0",
@@ -9241,7 +9330,7 @@
 "attr _uid_source_bindings={}",
 "attr _uid_sparse_coverage=false",
 "attr _uid_superseded_store_ids=[]",
-"attrs count=153 sha256=8a72774d5d3b9a820a6449c7ad44cf92c44ae948972753373a595e6f022921df"
+"attrs count=154 sha256=bc780fe9af8b97d26ede1641ab212481fecad3b4795fc5165f69a6fddf56d49b"
 ],
 "pre-leaf-frontier-read-error": [
 "compress attempt=1",
@@ -9326,6 +9415,7 @@
 "message assistant 7c6b372997fd/1266",
 "message user a036540eca3b/1267",
 "message assistant 5af94fa49bf3/1266",
+"attr _cold_threshold_retry=false",
 "attr _compress_escaped=[]",
 "attr _compress_forced_overflow=false",
 "attr _compress_hidden_rows_consumed=0",
@@ -9342,7 +9432,7 @@
 "attr _pending_emission_candidates=sha12/len=fc146730afef/464",
 "attr _store=sha12/len=f8618c558404/25548",
 "attr _survival_pass_observed=true",
-"attrs count=153 sha256=42ce271ef4519cb28fa57b385cbfb86fe66dc45f0e0ea12813aa7ec8177c494c"
+"attrs count=154 sha256=74f340296b0392c57fc6ad96e5384f95b2fe9365437ad022775d5fe47f8899c7"
 ],
 "pre-leaf-publication-locked": [
 "compress attempt=1",
@@ -9427,6 +9517,7 @@
 "message assistant 7c6b372997fd/1266",
 "message user a036540eca3b/1267",
 "message assistant 5af94fa49bf3/1266",
+"attr _cold_threshold_retry=false",
 "attr _compress_escaped=[]",
 "attr _compress_forced_overflow=false",
 "attr _compress_hidden_rows_consumed=0",
@@ -9444,7 +9535,7 @@
 "attr _store=sha12/len=f8618c558404/25548",
 "attr _survival_fit_reason=\"sqlite_publication_locked\"",
 "attr _survival_pass_observed=true",
-"attrs count=153 sha256=43db86fbc15bf4bc55420db19a8fa66efe9f83279e8267f60e5471873a02ee2e"
+"attrs count=154 sha256=e156a1f77099313bf05bf3e6ea5eb610047bc4eebc54826637d1b28e17f3892b"
 ],
 "prepared-leaf-promotion": [
 "compress attempt=1",
@@ -9518,6 +9609,7 @@
 "message user b53243ce9e6d/826",
 "message user a036540eca3b/1267",
 "message assistant 5af94fa49bf3/1266",
+"attr _cold_threshold_retry=false",
 "attr _compress_escaped=[]",
 "attr _compress_forced_overflow=false",
 "attr _compress_hidden_rows_consumed=0",
@@ -9549,7 +9641,7 @@
 "attr _uid_sparse_coverage=false",
 "attr _uid_superseded_store_ids=[]",
 "attr compression_count=1",
-"attrs count=153 sha256=652fad0b50b0dbd3cacb9c237a4c8372e9147933009d7948649c4b00f2fd979d"
+"attrs count=154 sha256=5e29a12b62b905f9aec96fb49c475203df2bca88342f3eba821e8f90dd5af2f3"
 ],
 "prepared-leaf-route-rejected": [
 "compress attempt=1",
@@ -9603,6 +9695,7 @@
 "message assistant 7c6b372997fd/1266",
 "message user a036540eca3b/1267",
 "message assistant 5af94fa49bf3/1266",
+"attr _cold_threshold_retry=false",
 "attr _compress_escaped=[]",
 "attr _compress_forced_overflow=false",
 "attr _compress_hidden_rows_consumed=0",
@@ -9632,7 +9725,7 @@
 "attr _uid_sparse_coverage=false",
 "attr _uid_superseded_store_ids=[]",
 "attr compression_count=1",
-"attrs count=153 sha256=1cbf37c5e78c49c8cea99173d966068f88d14cc317fda5bf6ae28d3109be74ba"
+"attrs count=154 sha256=bf03bd9c261a4cd8fc9e2d21991fc4c9fea8b58b3ba05572d58c76f256d3cd21"
 ],
 "provider-aborted": [
 "compress attempt=1",
@@ -9705,6 +9798,7 @@
 "message assistant 7c6b372997fd/1266",
 "message user a036540eca3b/1267",
 "message assistant 5af94fa49bf3/1266",
+"attr _cold_threshold_retry=false",
 "attr _compress_escaped=[]",
 "attr _compress_forced_overflow=false",
 "attr _compress_hidden_rows_consumed=0",
@@ -9732,7 +9826,7 @@
 "attr _uid_source_bindings={}",
 "attr _uid_sparse_coverage=false",
 "attr _uid_superseded_store_ids=[]",
-"attrs count=153 sha256=be0538bf7bedd6ecc097cd44ac95437ba5d010700da0a8f9517ce85d29bd5074"
+"attrs count=154 sha256=c85c32b3d7afb66e70e007e0eccec202c1fab3a103806a724acfa9480d397474"
 ],
 "publish-advance-deferred-short": [
 "compress attempt=1",
@@ -9789,6 +9883,7 @@
 "message user 2954dc3014b3/231",
 "message user a036540eca3b/1267",
 "message assistant 5af94fa49bf3/1266",
+"attr _cold_threshold_retry=false",
 "attr _compress_escaped=[]",
 "attr _compress_forced_overflow=false",
 "attr _compress_hidden_rows_consumed=0",
@@ -9818,7 +9913,7 @@
 "attr _uid_sparse_coverage=false",
 "attr _uid_superseded_store_ids=[]",
 "attr compression_count=1",
-"attrs count=153 sha256=4420dcdcb8a3522ea4077629a13b6269aa149b407821471856fd7b4cec62e064"
+"attrs count=154 sha256=42803b2f538e11d93134a7bf895f5d2a1c5c1c7a3d9038e6a0bda2d48506cca6"
 ],
 "publish-advance-dynamic-empty": [
 "compress attempt=1",
@@ -9897,6 +9992,7 @@
 "message user 2954dc3014b3/231",
 "message user f6149929fcde/1267",
 "message assistant 1d3aa33ccd2c/1266",
+"attr _cold_threshold_retry=false",
 "attr _compress_escaped=[]",
 "attr _compress_forced_overflow=false",
 "attr _compress_hidden_rows_consumed=0",
@@ -9929,7 +10025,7 @@
 "attr _uid_sparse_coverage=false",
 "attr _uid_superseded_store_ids=[]",
 "attr compression_count=1",
-"attrs count=153 sha256=2b85edc26f4ec3fd1fe701917aafb470bb2cd7994e5b1538b0db7b14c6125b92"
+"attrs count=154 sha256=6d6972ee1b1c1db380c194234b966d426c60a70fe97ff3a7bf7180376f47a83a"
 ],
 "publish-advance-gc-nonlock": [
 "compress attempt=1",
@@ -10041,6 +10137,7 @@
 "message tool b418dd6b02ab/1600",
 "message assistant b61a04d6dd7e/1600",
 "message tool b3f7e026a84f/1600",
+"attr _cold_threshold_retry=false",
 "attr _compress_escaped=[]",
 "attr _compress_forced_overflow=false",
 "attr _compress_hidden_rows_consumed=0",
@@ -10072,7 +10169,7 @@
 "attr _uid_source_bindings={}",
 "attr _uid_sparse_coverage=false",
 "attr _uid_superseded_store_ids=[]",
-"attrs count=153 sha256=e871af63eab0b5df7e5ec1ff0237850abb78cefe0afb63fdfd5b040a5826acb2"
+"attrs count=154 sha256=16a4044593778d21fbeda9c678ff618122e3bd0fa53628fe9a3a2d420c0ee800"
 ],
 "publish-advance-hidden-drain": [
 "compress attempt=1",
@@ -10171,6 +10268,7 @@
 "message user 7f8e5c382671/1654",
 "message user a036540eca3b/1267",
 "message assistant 5af94fa49bf3/1266",
+"attr _cold_threshold_retry=false",
 "attr _compress_escaped=[]",
 "attr _compress_forced_overflow=false",
 "attr _compress_hidden_rows_consumed=14",
@@ -10203,7 +10301,7 @@
 "attr _uid_sparse_coverage=false",
 "attr _uid_superseded_store_ids=[]",
 "attr compression_count=1",
-"attrs count=153 sha256=9b451fc9d48cf512d78f8417a447dca7d93f88026deaa02a5d986e1b2f67365e"
+"attrs count=154 sha256=9b718c84f955523505c174873b3c4d8c1c286b617e9314a971959a50ba8902d0"
 ],
 "publish-advance-nonlock": [
 "compress attempt=1",
@@ -10285,6 +10383,7 @@
 "message assistant 7c6b372997fd/1266",
 "message user a036540eca3b/1267",
 "message assistant 5af94fa49bf3/1266",
+"attr _cold_threshold_retry=false",
 "attr _compress_escaped=[]",
 "attr _compress_forced_overflow=false",
 "attr _compress_hidden_rows_consumed=0",
@@ -10313,7 +10412,7 @@
 "attr _uid_source_bindings={}",
 "attr _uid_sparse_coverage=false",
 "attr _uid_superseded_store_ids=[]",
-"attrs count=153 sha256=8b674db9e346a986bc8f5b2be682a5d4de7f8a476ea139c99efbb17353454c18"
+"attrs count=154 sha256=7c705e45993fe26563d831d2f321dbf5e451a2a6709e3ace046deefab682bd00"
 ],
 "publish-advance-promote-continue": [
 "compress attempt=1",
@@ -10399,6 +10498,7 @@
 "message user 739159cc1021/474",
 "message user a036540eca3b/1267",
 "message assistant 5af94fa49bf3/1266",
+"attr _cold_threshold_retry=false",
 "attr _compress_escaped=[]",
 "attr _compress_forced_overflow=false",
 "attr _compress_hidden_rows_consumed=0",
@@ -10428,7 +10528,7 @@
 "attr _uid_sparse_coverage=false",
 "attr _uid_superseded_store_ids=[]",
 "attr compression_count=1",
-"attrs count=153 sha256=354d92ff3d38a25832313a3153ae04b73af6606422bd0f02469ba989fc2c8908"
+"attrs count=154 sha256=46c5684d3b26e7c242a36306a54fb23ebda4c4a2dceb8904fd95a33abfdde216"
 ],
 "publish-advance-promote-low": [
 "compress attempt=1",
@@ -10483,6 +10583,7 @@
 "message assistant 7c6b372997fd/1266",
 "message user a036540eca3b/1267",
 "message assistant 5af94fa49bf3/1266",
+"attr _cold_threshold_retry=false",
 "attr _compress_escaped=[]",
 "attr _compress_forced_overflow=false",
 "attr _compress_hidden_rows_consumed=0",
@@ -10512,7 +10613,7 @@
 "attr _uid_sparse_coverage=false",
 "attr _uid_superseded_store_ids=[]",
 "attr compression_count=1",
-"attrs count=153 sha256=616216830f5fd442796dcec3900953bb2a7ca1f6c246835cbc68a514aa3c2a3e"
+"attrs count=154 sha256=4695f4a97ab575fdd5568d0969becfbab47a7fef39148b67926d6328ced563ea"
 ],
 "publish-advance-publish-binding": [
 "compress attempt=1",
@@ -10555,6 +10656,7 @@
 "message assistant 7c6b372997fd/1266",
 "message user a036540eca3b/1267",
 "message assistant 5af94fa49bf3/1266",
+"attr _cold_threshold_retry=false",
 "attr _compress_escaped=[]",
 "attr _compress_forced_overflow=false",
 "attr _compress_hidden_rows_consumed=0",
@@ -10582,7 +10684,7 @@
 "attr _uid_source_bindings={}",
 "attr _uid_sparse_coverage=false",
 "attr _uid_superseded_store_ids=[]",
-"attrs count=153 sha256=bf05f5b96fbfd3e33c71fdf7aba7e3d90cefb24b71c9e124a2b445e1b0e53e07"
+"attrs count=154 sha256=79f72a6bf8c0ab97c5b1f6e5ad0a51e2a4ae4e4e8c9caf3adba20d3e0e1506c1"
 ],
 "publish-advance-publish-coverage": [
 "compress attempt=1",
@@ -10642,6 +10744,7 @@
 "message assistant 7c6b372997fd/1266",
 "message user a036540eca3b/1267",
 "message assistant 5af94fa49bf3/1266",
+"attr _cold_threshold_retry=false",
 "attr _compress_escaped=[]",
 "attr _compress_forced_overflow=false",
 "attr _compress_hidden_rows_consumed=0",
@@ -10671,7 +10774,7 @@
 "attr _uid_sparse_coverage=false",
 "attr _uid_superseded_store_ids=[]",
 "attr compression_count=1",
-"attrs count=153 sha256=7d9a404b8c7dc64dd2bc4782fde1e2f2f0ab348ecb63ad9575cac4e12c3dc399"
+"attrs count=154 sha256=a84e2e4ad6f8e0e660066b93c66bf0fb8bf34042f745841dcc9b76399c432060"
 ],
 "publish-advance-publish-fence": [
 "compress attempt=1",
@@ -10714,6 +10817,7 @@
 "message assistant 7c6b372997fd/1266",
 "message user a036540eca3b/1267",
 "message assistant 5af94fa49bf3/1266",
+"attr _cold_threshold_retry=false",
 "attr _compress_escaped=[]",
 "attr _compress_forced_overflow=false",
 "attr _compress_hidden_rows_consumed=0",
@@ -10741,7 +10845,7 @@
 "attr _uid_source_bindings={}",
 "attr _uid_sparse_coverage=false",
 "attr _uid_superseded_store_ids=[]",
-"attrs count=153 sha256=b8f0da2a79d90fb205fb38bae177a1d54db6819804d15e75037987b2568b4949"
+"attrs count=154 sha256=029fd4af88992d9d1f127d400911cf9b6a3b197d9de8da43155c21e3faea196f"
 ],
 "publish-advance-publish-frontier": [
 "compress attempt=1",
@@ -10784,6 +10888,7 @@
 "message assistant 7c6b372997fd/1266",
 "message user a036540eca3b/1267",
 "message assistant 5af94fa49bf3/1266",
+"attr _cold_threshold_retry=false",
 "attr _compress_escaped=[]",
 "attr _compress_forced_overflow=false",
 "attr _compress_hidden_rows_consumed=0",
@@ -10811,7 +10916,7 @@
 "attr _uid_source_bindings={}",
 "attr _uid_sparse_coverage=false",
 "attr _uid_superseded_store_ids=[]",
-"attrs count=153 sha256=b8f0da2a79d90fb205fb38bae177a1d54db6819804d15e75037987b2568b4949"
+"attrs count=154 sha256=029fd4af88992d9d1f127d400911cf9b6a3b197d9de8da43155c21e3faea196f"
 ],
 "publish-advance-publish-retry": [
 "compress attempt=1",
@@ -10904,6 +11009,7 @@
 "message user 739159cc1021/474",
 "message user a036540eca3b/1267",
 "message assistant 5af94fa49bf3/1266",
+"attr _cold_threshold_retry=false",
 "attr _compress_escaped=[]",
 "attr _compress_forced_overflow=false",
 "attr _compress_hidden_rows_consumed=0",
@@ -10933,7 +11039,7 @@
 "attr _uid_sparse_coverage=false",
 "attr _uid_superseded_store_ids=[]",
 "attr compression_count=1",
-"attrs count=153 sha256=354d92ff3d38a25832313a3153ae04b73af6606422bd0f02469ba989fc2c8908"
+"attrs count=154 sha256=46c5684d3b26e7c242a36306a54fb23ebda4c4a2dceb8904fd95a33abfdde216"
 ],
 "publish-advance-publish-route": [
 "compress attempt=1",
@@ -10993,13 +11099,14 @@
 "message assistant 7c6b372997fd/1266",
 "message user a036540eca3b/1267",
 "message assistant 5af94fa49bf3/1266",
+"attr _cold_threshold_retry=false",
 "attr _compress_escaped=[]",
 "attr _compress_forced_overflow=false",
 "attr _compress_hidden_rows_consumed=0",
 "attr _compress_host_rows_consumed=4",
 "attr _compress_occurrences=null",
 "attr _compress_run=sha12/len=a24b4be2c166/300",
-"attr _config=sha12/len=e886a8fae06f/4730",
+"attr _config=sha12/len=090d6a5a6997/4770",
 "attr _dag=sha12/len=e9089ed1d2e5/344",
 "attr _foreground_budget=sha12/len=4b5b97b54dd4/384",
 "attr _ingest_cursor=14",
@@ -11023,7 +11130,7 @@
 "attr _uid_sparse_coverage=false",
 "attr _uid_superseded_store_ids=[]",
 "attr compression_count=1",
-"attrs count=153 sha256=1cbf37c5e78c49c8cea99173d966068f88d14cc317fda5bf6ae28d3109be74ba"
+"attrs count=154 sha256=bf03bd9c261a4cd8fc9e2d21991fc4c9fea8b58b3ba05572d58c76f256d3cd21"
 ],
 "replayed-summary-scaffold": [
 "compress attempt=1",
@@ -11150,6 +11257,7 @@
 "message assistant 7c6b372997fd/1266",
 "message user a036540eca3b/1267",
 "message assistant 5af94fa49bf3/1266",
+"attr _cold_threshold_retry=false",
 "attr _compress_escaped=[]",
 "attr _compress_forced_overflow=false",
 "attr _compress_hidden_rows_consumed=0",
@@ -11182,7 +11290,7 @@
 "attr _uid_sparse_coverage=false",
 "attr _uid_superseded_store_ids=[]",
 "attr compression_count=2",
-"attrs count=153 sha256=4b7c58841f7a012f971740dc80e73862cb884ef74ff3e8d775bb4cd1d7e38602"
+"attrs count=154 sha256=94ab48cdeca93f9e2ad01588d9c790b93786d76ca71e4838021bd5b53de4b021"
 ],
 "resume-after-interruption": [
 "compress attempt=1",
@@ -11340,6 +11448,7 @@
 "message user 8bcbc615232b/826",
 "message user a036540eca3b/1267",
 "message assistant 5af94fa49bf3/1266",
+"attr _cold_threshold_retry=false",
 "attr _compress_escaped=[]",
 "attr _compress_forced_overflow=false",
 "attr _compress_hidden_rows_consumed=0",
@@ -11374,7 +11483,7 @@
 "attr _uid_sparse_coverage=false",
 "attr _uid_superseded_store_ids=[]",
 "attr compression_count=1",
-"attrs count=153 sha256=b87dd33d89af249e01a4d6c8e0ab8b32fe60826a948f4de240ad67be45a5f57e"
+"attrs count=154 sha256=0dd312586b948d8b634d54413781a5b3d80adc086dd8f90c471291ee966316b0"
 ],
 "resume-commit-wide-tail": [
 "compress attempt=1",
@@ -11403,6 +11512,7 @@
 "message assistant 7c6b372997fd/1266",
 "message user a036540eca3b/1267",
 "message assistant 5af94fa49bf3/1266",
+"attr _cold_threshold_retry=false",
 "attr _compress_escaped=[]",
 "attr _compress_forced_overflow=false",
 "attr _compress_hidden_rows_consumed=0",
@@ -11416,7 +11526,7 @@
 "attr _no_progress_proof_fingerprint=null",
 "attr _pending_emission_candidates=sha12/len=80ce4269865e/3211",
 "attr _survival_pass_observed=true",
-"attrs count=153 sha256=80d1c93adaadd6de3a82228ee6e79918f90f62e8b2e54d5a70b012a991b153d2"
+"attrs count=154 sha256=d9a8d8d9da82092b775f0a4882f692ec980e3f44cebbbbcbe3493d5220ba9264"
 ],
 "resume-unadopted-commit": [
 "compress attempt=1",
@@ -11543,6 +11653,7 @@
 "message assistant 7c6b372997fd/1266",
 "message user a036540eca3b/1267",
 "message assistant 5af94fa49bf3/1266",
+"attr _cold_threshold_retry=false",
 "attr _compress_escaped=[]",
 "attr _compress_forced_overflow=false",
 "attr _compress_hidden_rows_consumed=0",
@@ -11575,7 +11686,7 @@
 "attr _uid_sparse_coverage=false",
 "attr _uid_superseded_store_ids=[]",
 "attr compression_count=2",
-"attrs count=153 sha256=9b49ce0deb1caabf652cdc064ef459747214ee2ee67b7458489dc7b6e55eaeca"
+"attrs count=154 sha256=a31c72fd456b983dd369123378fbc36ce4acafe33cfe3dd7c4117c13d53da238"
 ],
 "retained-tail-occurrence": [
 "compress attempt=1",
@@ -11657,6 +11768,7 @@
 "message assistant 5af94fa49bf3/1266",
 "message user 3966be03c944/1267",
 "message assistant 7a468e7d082c/1266",
+"attr _cold_threshold_retry=false",
 "attr _compress_escaped=[]",
 "attr _compress_forced_overflow=false",
 "attr _compress_hidden_rows_consumed=0",
@@ -11688,7 +11800,7 @@
 "attr _uid_sparse_coverage=true",
 "attr _uid_superseded_store_ids=[]",
 "attr compression_count=2",
-"attrs count=153 sha256=05c2846c3247e39b3750a649da705e9a5651b888284d0320adc07fecc258576f"
+"attrs count=154 sha256=a772e3b0b18492130f297e187296df5db343ebf4eb68186210221979265611a1"
 ],
 "retained-tail-occurrence-escape": [
 "compress attempt=1",
@@ -11770,6 +11882,7 @@
 "message assistant 5af94fa49bf3/1266",
 "message user 3966be03c944/1267",
 "message assistant 7a468e7d082c/1266",
+"attr _cold_threshold_retry=false",
 "attr _compress_escaped=[]",
 "attr _compress_forced_overflow=false",
 "attr _compress_hidden_rows_consumed=0",
@@ -11801,7 +11914,7 @@
 "attr _uid_sparse_coverage=true",
 "attr _uid_superseded_store_ids=[]",
 "attr compression_count=2",
-"attrs count=153 sha256=552e23e0ace809a6cefa6b4527218835aeb485b1b3c225402f4343b52e6318f1"
+"attrs count=154 sha256=877cead10e8c061d32c7c992c96b859b4c9f8fc4eec52a2216e981a9ee4d7cb7"
 ],
 "route-unavailable": [
 "compress attempt=1",
@@ -11874,6 +11987,7 @@
 "message assistant 7c6b372997fd/1266",
 "message user a036540eca3b/1267",
 "message assistant 5af94fa49bf3/1266",
+"attr _cold_threshold_retry=false",
 "attr _compress_escaped=[]",
 "attr _compress_forced_overflow=false",
 "attr _compress_hidden_rows_consumed=0",
@@ -11903,7 +12017,7 @@
 "attr _uid_source_bindings={}",
 "attr _uid_sparse_coverage=false",
 "attr _uid_superseded_store_ids=[]",
-"attrs count=153 sha256=4ce73abe8c0d6c11da2679f5fce8cb78168ae6e4e814edcabd71cc5d1f003ea0"
+"attrs count=154 sha256=0422d3001daa3b15b51f5be16d6a3c932683baadcde1099dcd438b969a6a4e7f"
 ],
 "route-unavailable-adopt-commit": [
 "compress attempt=1",
@@ -12024,6 +12138,7 @@
 "message assistant 7c6b372997fd/1266",
 "message user a036540eca3b/1267",
 "message assistant 5af94fa49bf3/1266",
+"attr _cold_threshold_retry=false",
 "attr _compress_escaped=[]",
 "attr _compress_forced_overflow=false",
 "attr _compress_hidden_rows_consumed=0",
@@ -12059,7 +12174,7 @@
 "attr _uid_sparse_coverage=false",
 "attr _uid_superseded_store_ids=[]",
 "attr compression_count=1",
-"attrs count=153 sha256=1e9c68c78bc201cf3a2aa03ff6403930450851411e691d3cb23e735f514b9f31"
+"attrs count=154 sha256=5e2078e3751b04150e8696ddfdfcd1ac059a2526e7e02afdf8d759af00715433"
 ],
 "route-unavailable-full-tail": [
 "compress attempt=1",
@@ -12104,6 +12219,7 @@
 "message system 6a97437a05d4/508",
 "message user 3966be03c944/1267",
 "message assistant 7a468e7d082c/1266",
+"attr _cold_threshold_retry=false",
 "attr _compress_escaped=[]",
 "attr _compress_forced_overflow=false",
 "attr _compress_hidden_rows_consumed=0",
@@ -12122,7 +12238,7 @@
 "attr _store=sha12/len=ea1402633a11/3476",
 "attr _survival_pass_observed=true",
 "attr _sweep_budget_hold_until=1300.0",
-"attrs count=153 sha256=6c0e1e0ad4ac11e60e2773ba3a865a041cf9588241c7ae78b3711e767e1106f2"
+"attrs count=154 sha256=a3d15a928048c0c0cd11bf1441d4926a18b1d13c5d7c3368eff42bbcabdbe4df"
 ],
 "selection-deferred-critical-False": [
 "compress attempt=1",
@@ -12208,6 +12324,7 @@
 "message user 67e4e8b1c7a0/112",
 "message user a036540eca3b/1267",
 "message assistant 5af94fa49bf3/1266",
+"attr _cold_threshold_retry=false",
 "attr _compress_escaped=[]",
 "attr _compress_forced_overflow=false",
 "attr _compress_hidden_rows_consumed=0",
@@ -12240,7 +12357,7 @@
 "attr _uid_sparse_coverage=false",
 "attr _uid_superseded_store_ids=[]",
 "attr compression_count=1",
-"attrs count=153 sha256=9ace74b7fa8ea2dee3cc13f549caac5dbf3f69d72431f87fc5e76ee7bdb87801"
+"attrs count=154 sha256=a1d818127896009a78a7949dcd16a718c8b7964e4cf606957c98dcd77f5c18c0"
 ],
 "selection-deferred-critical-True": [
 "compress attempt=1",
@@ -12326,6 +12443,7 @@
 "message user 67e4e8b1c7a0/112",
 "message user a036540eca3b/1267",
 "message assistant 5af94fa49bf3/1266",
+"attr _cold_threshold_retry=false",
 "attr _compress_escaped=[]",
 "attr _compress_forced_overflow=false",
 "attr _compress_hidden_rows_consumed=0",
@@ -12358,7 +12476,7 @@
 "attr _uid_sparse_coverage=false",
 "attr _uid_superseded_store_ids=[]",
 "attr compression_count=1",
-"attrs count=153 sha256=6903f7c3b341e67dfd323e4de68465f12585396bb75a9e2a22044b75398cc164"
+"attrs count=154 sha256=bdce367a90b8a3abb7b790a104340179eaa19ee45f82c041dff3b4b3435a74df"
 ],
 "selection-empty-filtered": [
 "compress attempt=1",
@@ -12384,6 +12502,7 @@
 "message system 6a97437a05d4/508",
 "message user f694d5a8b2f8/14",
 "message assistant b78fea766ebe/13",
+"attr _cold_threshold_retry=false",
 "attr _compress_dropped_ignored_rows=true",
 "attr _compress_escaped=[]",
 "attr _compress_forced_overflow=false",
@@ -12402,7 +12521,7 @@
 "attr _no_progress_public_rows=sha12/len=d6453683c669/1491",
 "attr _pending_emission_candidates=[]",
 "attr _survival_pass_observed=true",
-"attrs count=153 sha256=4a856c7535e85d540aa85a386eb2424cf873f0edf1251d201152ceb398c6ed88"
+"attrs count=154 sha256=9402dce2e540c21cf59a35360cca093731f7d9c7134beb6774bbd02ec2b1ae4c"
 ],
 "selection-objective-sweep": [
 "compress attempt=1",
@@ -12450,6 +12569,7 @@
 "message tool b418dd6b02ab/1600",
 "message assistant b61a04d6dd7e/1600",
 "message tool b3f7e026a84f/1600",
+"attr _cold_threshold_retry=false",
 "attr _compress_escaped=[]",
 "attr _compress_forced_overflow=false",
 "attr _compress_hidden_rows_consumed=0",
@@ -12471,7 +12591,7 @@
 "attr _pending_emission_candidates=[]",
 "attr _store=sha12/len=25ee3a20c4e0/15841",
 "attr _survival_pass_observed=true",
-"attrs count=153 sha256=c10a0aea1a81e9d3c9622ad2468733eab2f1d2b0a9eab53b6ff535ab298440fa"
+"attrs count=154 sha256=1624e2f5f19cf7f1464944785a60d5fd01b7d6949ec8f8f9566abebf54307614"
 ],
 "selection-prepared-hidden": [
 "compress attempt=1",
@@ -12509,6 +12629,7 @@
 "message user e2d650caf507/226",
 "message user a036540eca3b/1267",
 "message assistant 5af94fa49bf3/1266",
+"attr _cold_threshold_retry=false",
 "attr _compress_escaped=[]",
 "attr _compress_forced_overflow=false",
 "attr _compress_hidden_rows_consumed=2",
@@ -12540,7 +12661,7 @@
 "attr _uid_sparse_coverage=false",
 "attr _uid_superseded_store_ids=[]",
 "attr compression_count=1",
-"attrs count=153 sha256=3ddc6bcbb16d689bfcb9557657541afc1407e2b5d55fa2497d28bdaa507bf081"
+"attrs count=154 sha256=fc5b011fa6220de89dfbff999a312a1e7ce9f655686ba6da324dabf48427ce2d"
 ],
 "selection-prepared-input-price-change": [
 "compress attempt=1",
@@ -12599,6 +12720,7 @@
 "message assistant 60637118f99f/1371",
 "message user 1efc21f611f4/1372",
 "message assistant 9c032d7351f3/1371",
+"attr _cold_threshold_retry=false",
 "attr _compress_escaped=[]",
 "attr _compress_forced_overflow=false",
 "attr _compress_hidden_rows_consumed=0",
@@ -12628,7 +12750,7 @@
 "attr _uid_sparse_coverage=false",
 "attr _uid_superseded_store_ids=[]",
 "attr compression_count=1",
-"attrs count=153 sha256=d37d1e685072efaa851821ecc0ffcad6538633efb2a2a085f701ed910c79402e"
+"attrs count=154 sha256=d5a68a9b4f5aca8a2edba3c6badccb2d69e691cacd09e4d18d3aa2b0cf6d3bf3"
 ],
 "selection-prepared-match": [
 "compress attempt=1",
@@ -12713,6 +12835,7 @@
 "message user 739159cc1021/474",
 "message user a036540eca3b/1267",
 "message assistant 5af94fa49bf3/1266",
+"attr _cold_threshold_retry=false",
 "attr _compress_escaped=[]",
 "attr _compress_forced_overflow=false",
 "attr _compress_hidden_rows_consumed=0",
@@ -12742,7 +12865,7 @@
 "attr _uid_sparse_coverage=false",
 "attr _uid_superseded_store_ids=[]",
 "attr compression_count=1",
-"attrs count=153 sha256=354d92ff3d38a25832313a3153ae04b73af6606422bd0f02469ba989fc2c8908"
+"attrs count=154 sha256=46c5684d3b26e7c242a36306a54fb23ebda4c4a2dceb8904fd95a33abfdde216"
 ],
 "selection-prepared-no-call": [
 "compress attempt=1",
@@ -12778,6 +12901,7 @@
 "message assistant 7c6b372997fd/1266",
 "message user a036540eca3b/1267",
 "message assistant 5af94fa49bf3/1266",
+"attr _cold_threshold_retry=false",
 "attr _compress_escaped=[]",
 "attr _compress_forced_overflow=false",
 "attr _compress_hidden_rows_consumed=0",
@@ -12804,7 +12928,7 @@
 "attr _uid_source_bindings={}",
 "attr _uid_sparse_coverage=false",
 "attr _uid_superseded_store_ids=[]",
-"attrs count=153 sha256=8cbdd2dafa5309b2e1f1f9bceb125ed153218450306f34205504be0b00b48427"
+"attrs count=154 sha256=1aededb7945a7c8705079a16b7643aff82d0902f19132d26218693780971efae"
 ],
 "selection-prepared-overflow": [
 "compress attempt=1",
@@ -12843,6 +12967,7 @@
 "assemble",
 "message system 6a97437a05d4/508",
 "message user 67e4e8b1c7a0/112",
+"attr _cold_threshold_retry=false",
 "attr _compress_escaped=[]",
 "attr _compress_forced_overflow=true",
 "attr _compress_hidden_rows_consumed=0",
@@ -12873,7 +12998,7 @@
 "attr _uid_sparse_coverage=false",
 "attr _uid_superseded_store_ids=[]",
 "attr compression_count=1",
-"attrs count=153 sha256=ce63c3a4b362b3eaf6ad33e4b957fad91f0952e47ed2ca50f17f0d3a1f1d686b"
+"attrs count=154 sha256=4dc8b8dc67cf457dbdbedc50688d1d8987ffea4ba1bcdc16539681119838290a"
 ],
 "selection-prepared-split": [
 "compress attempt=1",
@@ -12931,6 +13056,7 @@
 "message assistant 7c6b372997fd/1266",
 "message user a036540eca3b/1267",
 "message assistant 5af94fa49bf3/1266",
+"attr _cold_threshold_retry=false",
 "attr _compress_escaped=[]",
 "attr _compress_forced_overflow=false",
 "attr _compress_hidden_rows_consumed=0",
@@ -12960,7 +13086,7 @@
 "attr _uid_sparse_coverage=false",
 "attr _uid_superseded_store_ids=[]",
 "attr compression_count=1",
-"attrs count=153 sha256=a1f8c36d89f9a73b5c77e7d0cd83aabdfe6498056e4444b60dd9281db343c61c"
+"attrs count=154 sha256=06ffbbb84698c91cbac0b3ec74c43fd95fb2bf2a5b4057b26e97dcca47b5a296"
 ],
 "selection-pressure-sweep": [
 "compress attempt=1",
@@ -13085,6 +13211,7 @@
 "message assistant 7c6b372997fd/1266",
 "message user a036540eca3b/1267",
 "message assistant 5af94fa49bf3/1266",
+"attr _cold_threshold_retry=false",
 "attr _compress_escaped=[]",
 "attr _compress_forced_overflow=false",
 "attr _compress_hidden_rows_consumed=0",
@@ -13119,7 +13246,7 @@
 "attr _uid_sparse_coverage=false",
 "attr _uid_superseded_store_ids=[]",
 "attr compression_count=1",
-"attrs count=153 sha256=b90cd8ce1154eba15a950d867f35e6ef4a600687a1a860559f415b65ddfa4ed8"
+"attrs count=154 sha256=529bf833d22d763313801e1f9e44db7a13cfc43d52a01936a91d156beb54d39f"
 ],
 "selection-unattributed": [
 "compress attempt=1",
@@ -13219,6 +13346,7 @@
 "message assistant 7c6b372997fd/1266",
 "message user a036540eca3b/1267",
 "message assistant 5af94fa49bf3/1266",
+"attr _cold_threshold_retry=false",
 "attr _compress_escaped=[]",
 "attr _compress_forced_overflow=false",
 "attr _compress_hidden_rows_consumed=0",
@@ -13250,7 +13378,7 @@
 "attr _uid_sparse_coverage=true",
 "attr _uid_superseded_store_ids=[]",
 "attr compression_count=2",
-"attrs count=153 sha256=a9a31d7031674b39edc17cae5364f4211b8afcc4b2d29233bbcc72b33b02e81e"
+"attrs count=154 sha256=6b2cc78d7d589c847a60a0a14d1e465d2ec8cf8d418aeccef58fdfab466c4d23"
 ],
 "single-below-minimum-no-fit": [
 "compress attempt=1",
@@ -13323,6 +13451,7 @@
 "message assistant 7c6b372997fd/1266",
 "message user a036540eca3b/1267",
 "message assistant 5af94fa49bf3/1266",
+"attr _cold_threshold_retry=false",
 "attr _compress_escaped=[]",
 "attr _compress_forced_overflow=false",
 "attr _compress_hidden_rows_consumed=0",
@@ -13342,7 +13471,7 @@
 "attr _pending_emission_candidates=[]",
 "attr _store=sha12/len=f8618c558404/25548",
 "attr _survival_pass_observed=true",
-"attrs count=153 sha256=07bd5805feebfff342da49a72532ecaf0cb88bf7e647ec1b647b677649bde4b3"
+"attrs count=154 sha256=07ff28a2e9e06f3d4de65ca418ba9c832c5b1daa814ddd8e69e7433aced2761f"
 ],
 "single-small-backlog-yields": [
 "compress attempt=1",
@@ -13423,6 +13552,7 @@
 "message user 67e4e8b1c7a0/112",
 "message user 69e6fa69ef3f/1444",
 "message assistant 5af94fa49bf3/1266",
+"attr _cold_threshold_retry=false",
 "attr _compress_escaped=[]",
 "attr _compress_forced_overflow=false",
 "attr _compress_hidden_rows_consumed=0",
@@ -13455,7 +13585,7 @@
 "attr _uid_sparse_coverage=false",
 "attr _uid_superseded_store_ids=[]",
 "attr compression_count=1",
-"attrs count=153 sha256=b597532b9ae61285899b4f9de2b025a5877f634e7c0e3c64f6b14d199df36b1f"
+"attrs count=154 sha256=2cbe5409140a6b5b7c16b9f70f798a7a51248c3a441e16e44781529173d347e4"
 ],
 "stateless-bypass-missing": [
 "compress attempt=1",
@@ -13510,6 +13640,7 @@
 "message assistant 7c6b372997fd/1266",
 "message user a036540eca3b/1267",
 "message assistant 5af94fa49bf3/1266",
+"attr _cold_threshold_retry=false",
 "attr _compaction_request=sha12/len=843254abdb56/159",
 "attr _compress_escaped=[]",
 "attr _compress_hidden_rows_consumed=0",
@@ -13518,7 +13649,7 @@
 "attr _last_compression_noop_reason=\"LCM bypassed below threshold: stateless session\"",
 "attr _last_compression_status=\"noop\"",
 "attr _pending_emission_candidates=[]",
-"attrs count=153 sha256=efe573f4bd7c68ccfdc05bd08aa64753cf325d87a6d9fcbef936a6547e6812be"
+"attrs count=154 sha256=e425ef96deb5d8798cbe5040c5e46e1ecc98ae58f6cace5f267216d138cf7e4a"
 ],
 "stateless-bypass-negative": [
 "compress attempt=1",
@@ -13573,6 +13704,7 @@
 "message assistant 7c6b372997fd/1266",
 "message user a036540eca3b/1267",
 "message assistant 5af94fa49bf3/1266",
+"attr _cold_threshold_retry=false",
 "attr _compaction_request=sha12/len=843254abdb56/159",
 "attr _compress_escaped=[]",
 "attr _compress_hidden_rows_consumed=0",
@@ -13581,7 +13713,7 @@
 "attr _last_compression_noop_reason=\"LCM bypassed below threshold: stateless session\"",
 "attr _last_compression_status=\"noop\"",
 "attr _pending_emission_candidates=[]",
-"attrs count=153 sha256=efe573f4bd7c68ccfdc05bd08aa64753cf325d87a6d9fcbef936a6547e6812be"
+"attrs count=154 sha256=e425ef96deb5d8798cbe5040c5e46e1ecc98ae58f6cace5f267216d138cf7e4a"
 ],
 "stateless-bypass-zero": [
 "compress attempt=1",
@@ -13636,6 +13768,7 @@
 "message assistant 7c6b372997fd/1266",
 "message user a036540eca3b/1267",
 "message assistant 5af94fa49bf3/1266",
+"attr _cold_threshold_retry=false",
 "attr _compaction_request=sha12/len=843254abdb56/159",
 "attr _compress_escaped=[]",
 "attr _compress_hidden_rows_consumed=0",
@@ -13644,7 +13777,7 @@
 "attr _last_compression_noop_reason=\"LCM bypassed below threshold: stateless session\"",
 "attr _last_compression_status=\"noop\"",
 "attr _pending_emission_candidates=[]",
-"attrs count=153 sha256=efe573f4bd7c68ccfdc05bd08aa64753cf325d87a6d9fcbef936a6547e6812be"
+"attrs count=154 sha256=e425ef96deb5d8798cbe5040c5e46e1ecc98ae58f6cace5f267216d138cf7e4a"
 ],
 "stop-hang-False-False-False": [
 "compress attempt=1",
@@ -13723,6 +13856,7 @@
 "message assistant 7c6b372997fd/1266",
 "message user a036540eca3b/1267",
 "message assistant 5af94fa49bf3/1266",
+"attr _cold_threshold_retry=false",
 "attr _compress_escaped=[]",
 "attr _compress_forced_overflow=false",
 "attr _compress_hidden_rows_consumed=0",
@@ -13757,7 +13891,7 @@
 "attr _uid_source_bindings={}",
 "attr _uid_sparse_coverage=false",
 "attr _uid_superseded_store_ids=[]",
-"attrs count=153 sha256=f3dc9ef386f39bd65eac081c32fe2a4780d94a13d0a08ab84ead5eedb00f4cb0"
+"attrs count=154 sha256=39037556f6a7922c5d791823dad67aca8c083ddd91fe1a1c61c8fdd63092133a"
 ],
 "stop-hang-False-False-True": [
 "compress attempt=1",
@@ -13836,6 +13970,7 @@
 "message assistant 7c6b372997fd/1266",
 "message user a036540eca3b/1267",
 "message assistant 5af94fa49bf3/1266",
+"attr _cold_threshold_retry=false",
 "attr _compress_escaped=[]",
 "attr _compress_forced_overflow=false",
 "attr _compress_hidden_rows_consumed=0",
@@ -13868,7 +14003,7 @@
 "attr _uid_source_bindings={}",
 "attr _uid_sparse_coverage=false",
 "attr _uid_superseded_store_ids=[]",
-"attrs count=153 sha256=23e675b4ef69586b4cad83283485bfe9d47c1a62e6509329d70520ae26591247"
+"attrs count=154 sha256=8b59bc1d66de361d447c9bd8435701d6c406f517adff8644c3bff6b4f1e65ab2"
 ],
 "stop-hang-False-True-False": [
 "compress attempt=1",
@@ -13932,6 +14067,7 @@
 "assemble",
 "message system 6a97437a05d4/508",
 "message assistant 5af94fa49bf3/1266",
+"attr _cold_threshold_retry=false",
 "attr _compress_escaped=[]",
 "attr _compress_forced_overflow=true",
 "attr _compress_hidden_rows_consumed=0",
@@ -13960,7 +14096,7 @@
 "attr _uid_source_bindings={}",
 "attr _uid_sparse_coverage=false",
 "attr _uid_superseded_store_ids=[]",
-"attrs count=153 sha256=acfcef32db3915fce7e6c6922608472d93418366ce3f8880df925b549154442b"
+"attrs count=154 sha256=7cc3f23654cb1f8419d2a8338ab6e88bb0998788ec39900841b95bf432814454"
 ],
 "stop-hang-False-True-True": [
 "compress attempt=1",
@@ -14024,6 +14160,7 @@
 "assemble",
 "message system 6a97437a05d4/508",
 "message assistant 5af94fa49bf3/1266",
+"attr _cold_threshold_retry=false",
 "attr _compress_escaped=[]",
 "attr _compress_forced_overflow=true",
 "attr _compress_hidden_rows_consumed=0",
@@ -14052,7 +14189,7 @@
 "attr _uid_source_bindings={}",
 "attr _uid_sparse_coverage=false",
 "attr _uid_superseded_store_ids=[]",
-"attrs count=153 sha256=7a97f48f3f0a0397f357d9077e5bd1cf45c0aacc617881c8d09c6e16ada75ee4"
+"attrs count=154 sha256=cad7ef0828b3aab8bd9b41933cf34f09c78dddd3cc00112e0954f8f181b70a2b"
 ],
 "stop-hang-True-False-False": [
 "compress attempt=1",
@@ -14094,7 +14231,7 @@
 "attr _pending_emission_candidates=[]",
 "attr _sweep_budget_hold_turn_paced=false",
 "attr _sweep_budget_hold_until=2131.0",
-"attrs count=153 sha256=d1ea451fee115806cdaa6b252114816a4bd0607f44aa87cb4f3f562b8e0b6fc6"
+"attrs count=154 sha256=6d70b53a7cf8cb89006cb8e47c8f3be864e851540d2e6d57f83b11ab739083f4"
 ],
 "stop-hang-True-False-True": [
 "compress attempt=1",
@@ -14134,7 +14271,7 @@
 "message assistant 5af94fa49bf3/1266",
 "attr _foreground_budget=sha12/len=958f78f7b178/442",
 "attr _pending_emission_candidates=[]",
-"attrs count=153 sha256=b17817f949e2ecdb52bbf7544dcac2b596f89b22a3adefb82a77e562ad9c5dc9"
+"attrs count=154 sha256=d51ad000088f31eac5f9c011b4ce9ece78057b6ade33beb3053380b41ebd0687"
 ],
 "stop-hang-True-True-False": [
 "compress attempt=1",
@@ -14166,7 +14303,7 @@
 "attr _no_progress_observed_tokens=250000",
 "attr _pending_emission_candidates=[]",
 "attr _sweep_budget_hold_turn_paced=false",
-"attrs count=153 sha256=dcab2f5b216e1a4df33c6580454a30f61a8ce17bdf474f5130dded47fa12d0dc"
+"attrs count=154 sha256=9d582ad02e1ba861200216dac89cc362dc520ee2a9bedd5fc23cae0d6cb15508"
 ],
 "stop-hang-True-True-True": [
 "compress attempt=1",
@@ -14197,7 +14334,7 @@
 "attr _last_overflow_recovery_failed=true",
 "attr _no_progress_observed_tokens=250000",
 "attr _pending_emission_candidates=[]",
-"attrs count=153 sha256=806e3a19629accfa3d9e101d245503bc96bc81a170d5075e4282080099f9d4a2"
+"attrs count=154 sha256=873df259e259ff12d74b438c42462d5b4592b5df14a8c6abaeccfe5e716f55b0"
 ],
 "stop-overflow-no-leaf": [
 "compress attempt=1",
@@ -14241,6 +14378,7 @@
 "assemble",
 "message system 6a97437a05d4/508",
 "message user 3966be03c944/1267",
+"attr _cold_threshold_retry=false",
 "attr _compress_escaped=[]",
 "attr _compress_forced_overflow=true",
 "attr _compress_hidden_rows_consumed=0",
@@ -14257,7 +14395,7 @@
 "attr _pending_emission_candidates=[]",
 "attr _store=sha12/len=ea1402633a11/3476",
 "attr _survival_pass_observed=true",
-"attrs count=153 sha256=80999fdde0368abc0eda45218e191f7a89fb010121002ccd81518e23571e5d27"
+"attrs count=154 sha256=90443203079014ac6c6dd1c0c2b5bdb8859b0276d34ef90bc6fe877fa3a8e14e"
 ],
 "stop-reason-cleared": [
 "compress attempt=1",
@@ -14301,6 +14439,7 @@
 "message assistant 7c6b372997fd/1266",
 "message user a036540eca3b/1267",
 "message assistant 5af94fa49bf3/1266",
+"attr _cold_threshold_retry=false",
 "attr _compress_dropped_ignored_rows=true",
 "attr _compress_escaped=[]",
 "attr _compress_forced_overflow=false",
@@ -14321,7 +14460,7 @@
 "attr _uid_coverage_owner=[\"<sandbox>/home\",\"S\",\"trace-conversation\"]",
 "attr _uid_source_bindings={}",
 "attr _uid_sparse_coverage=false",
-"attrs count=153 sha256=4bb4a01d657b01ab78c31e7f4f6f32ac358ae01a17381465ac65929ab2edd90a"
+"attrs count=154 sha256=6ae97ef5a18924bba5785bff070cf035e2b2605d21d20742d3302a04ee9bf850"
 ],
 "stop-reason-retained": [
 "compress attempt=1",
@@ -14432,6 +14571,7 @@
 "message assistant 5af94fa49bf3/1266",
 "message user 3966be03c944/1267",
 "message assistant 7a468e7d082c/1266",
+"attr _cold_threshold_retry=false",
 "attr _compress_escaped=[]",
 "attr _compress_forced_overflow=false",
 "attr _compress_hidden_rows_consumed=0",
@@ -14463,7 +14603,7 @@
 "attr _uid_sparse_coverage=true",
 "attr _uid_superseded_store_ids=[]",
 "attr compression_count=2",
-"attrs count=153 sha256=cc7c3447baae4f81aaefc8fe692f35659bec850be2107a445c675d47076fb724"
+"attrs count=154 sha256=87f4f3996d434946cd72597b53648e7984ed9ff4b749c837006c265844a08a5b"
 ],
 "stop-reason-retained-escape": [
 "compress attempt=1",
@@ -14574,6 +14714,7 @@
 "message assistant 5af94fa49bf3/1266",
 "message user 3966be03c944/1267",
 "message assistant 7a468e7d082c/1266",
+"attr _cold_threshold_retry=false",
 "attr _compress_escaped=[]",
 "attr _compress_forced_overflow=false",
 "attr _compress_hidden_rows_consumed=0",
@@ -14605,7 +14746,7 @@
 "attr _uid_sparse_coverage=true",
 "attr _uid_superseded_store_ids=[]",
 "attr compression_count=2",
-"attrs count=153 sha256=80c13fb20cd7fe8000b5b6acf8430576509d9318cb326f0e25060f1f8af09504"
+"attrs count=154 sha256=c75ed32970a85cfd956523f8c894c7b3c65417985aef171a35c6ce6eed17b25f"
 ],
 "stop-reason-unattributed": [
 "compress attempt=1",
@@ -14708,6 +14849,7 @@
 "message assistant 7c6b372997fd/1266",
 "message user a036540eca3b/1267",
 "message assistant 5af94fa49bf3/1266",
+"attr _cold_threshold_retry=false",
 "attr _compress_escaped=[]",
 "attr _compress_forced_overflow=false",
 "attr _compress_hidden_rows_consumed=0",
@@ -14740,7 +14882,7 @@
 "attr _uid_sparse_coverage=true",
 "attr _uid_superseded_store_ids=[]",
 "attr compression_count=2",
-"attrs count=153 sha256=4234a340e77e112f98401abf4c44889379483092aa99ad7814377ec09aadd511"
+"attrs count=154 sha256=de20c12a26f6eeb355f7e58202b9f13fba315f230e588037de9f3394efa114a7"
 ],
 "stop-refused-restore": [
 "compress attempt=1",
@@ -14785,6 +14927,7 @@
 "message assistant 7c6b372997fd/1266",
 "message user a036540eca3b/1267",
 "message assistant 5af94fa49bf3/1266",
+"attr _cold_threshold_retry=false",
 "attr _compress_dropped_ignored_rows=true",
 "attr _compress_escaped=[]",
 "attr _compress_forced_overflow=false",
@@ -14813,7 +14956,7 @@
 "attr _uid_source_bindings={}",
 "attr _uid_sparse_coverage=false",
 "attr _uid_superseded_store_ids=[]",
-"attrs count=153 sha256=7c625a8081b27bb2ab4fb76068a6e4c408e13e0a50cde76693d5fbdee810fc6f"
+"attrs count=154 sha256=e3cd01f4b2c1d6dba02435d7cd8b55af170e30efd832b4fbed469560b429fe8a"
 ],
 "stop-rejection-after-leaf": [
 "compress attempt=1",
@@ -14914,6 +15057,7 @@
 "message assistant 7c6b372997fd/1266",
 "message user a036540eca3b/1267",
 "message assistant 5af94fa49bf3/1266",
+"attr _cold_threshold_retry=false",
 "attr _compress_escaped=[]",
 "attr _compress_forced_overflow=false",
 "attr _compress_hidden_rows_consumed=0",
@@ -14947,7 +15091,7 @@
 "attr _uid_sparse_coverage=false",
 "attr _uid_superseded_store_ids=[]",
 "attr compression_count=1",
-"attrs count=153 sha256=66e7d80134a57e97caea7ffea067dd65ea83e2c3f0cdb22ab25be507d07a8d97"
+"attrs count=154 sha256=8161fb9e6208801169a67bcb5d616c908b8a993d0378afe8b5d1cb3ea77c8b1b"
 ],
 "stop-resumed-anchor": [
 "compress attempt=1",
@@ -14986,6 +15130,7 @@
 "message assistant 7c6b372997fd/1266",
 "message user a036540eca3b/1267",
 "message assistant 5af94fa49bf3/1266",
+"attr _cold_threshold_retry=false",
 "attr _compress_escaped=[]",
 "attr _compress_forced_overflow=false",
 "attr _compress_hidden_rows_consumed=0",
@@ -14999,7 +15144,7 @@
 "attr _no_progress_proof_fingerprint=null",
 "attr _pending_emission_candidates=sha12/len=7d75449c34c6/416",
 "attr _survival_pass_observed=true",
-"attrs count=153 sha256=c1c993dd86d16f910436baea4df18a04f3cf24edd3f59e12ddc9946d6f89b01c"
+"attrs count=154 sha256=01f6df1cf2360f8cd8cd5e90bbe5c7d3a9c15b9939a66df370f5adebd584cc13"
 ],
 "stop-route-after-leaf": [
 "compress attempt=1",
@@ -15096,6 +15241,7 @@
 "message assistant 7c6b372997fd/1266",
 "message user a036540eca3b/1267",
 "message assistant 5af94fa49bf3/1266",
+"attr _cold_threshold_retry=false",
 "attr _compress_escaped=[]",
 "attr _compress_forced_overflow=false",
 "attr _compress_hidden_rows_consumed=0",
@@ -15129,7 +15275,7 @@
 "attr _uid_sparse_coverage=false",
 "attr _uid_superseded_store_ids=[]",
 "attr compression_count=1",
-"attrs count=153 sha256=cdf2e6e9df0f4c8fa6c54b98944f83c2336109fd6c2778ca0016760a04fa2ba7"
+"attrs count=154 sha256=b87908623fe2bce726f4629130d2cd2cd454499d2595ca328a50be63f4a0fcd3"
 ],
 "stop-scaffold-equal": [
 "compress attempt=1",
@@ -15168,6 +15314,7 @@
 "message assistant 7c6b372997fd/1266",
 "message user a036540eca3b/1267",
 "message assistant 5af94fa49bf3/1266",
+"attr _cold_threshold_retry=false",
 "attr _compress_dropped_ignored_rows=true",
 "attr _compress_escaped=[]",
 "attr _compress_forced_overflow=false",
@@ -15186,7 +15333,7 @@
 "attr _no_progress_public_rows=sha12/len=cfd1777acbed/20979",
 "attr _pending_emission_candidates=[]",
 "attr _survival_pass_observed=true",
-"attrs count=153 sha256=38c6eacd48c0f5ce0aff10551cbdf6c48f8487cb90e818b37738d487eeee7895"
+"attrs count=154 sha256=f6df5e109e395e4abe107a08d7205a5a07cc97a54009c72191d0ca8b27266614"
 ],
 "stub-first-exit": [
 "compress attempt=1",
@@ -15274,6 +15421,7 @@
 "message tool 42152c96b8ab/237",
 "message assistant b61a04d6dd7e/1600",
 "message tool 5b2c2c72fea5/237",
+"attr _cold_threshold_retry=false",
 "attr _compress_escaped=[]",
 "attr _compress_forced_overflow=false",
 "attr _compress_hidden_rows_consumed=0",
@@ -15291,7 +15439,7 @@
 "attr _store=sha12/len=acd66f87830b/35604",
 "attr _stub_first_exit_now=sha12/len=fd265c889784/84",
 "attr _survival_pass_observed=true",
-"attrs count=153 sha256=9f647aa44d4718e53aa1da2f2027bc3f6cda9f1dade80b53c64154e9769500bd"
+"attrs count=154 sha256=1f060b135e2f0bd891bcb7de98562e95d7ee3f9031254979b09a53eec26b9f4b"
 ],
 "sweep-budget-entry": [
 "compress attempt=1",
@@ -15364,6 +15512,7 @@
 "message assistant 7c6b372997fd/1266",
 "message user a036540eca3b/1267",
 "message assistant 5af94fa49bf3/1266",
+"attr _cold_threshold_retry=false",
 "attr _compress_escaped=[]",
 "attr _compress_forced_overflow=false",
 "attr _compress_hidden_rows_consumed=0",
@@ -15384,7 +15533,7 @@
 "attr _store=sha12/len=78abcdec3f42/25548",
 "attr _survival_pass_observed=true",
 "attr _sweep_budget_hold_until=1721.0",
-"attrs count=153 sha256=9293f4529fe8873467bfa39444b4f5a204aab41980a3fe316c016c21a8b8acfa"
+"attrs count=154 sha256=0f30fcf1c7f516c8000a5332c34804cb36d05e4a3eb13d63c4c0b2c4abcb5239"
 ],
 "sweep-drain-condense": [
 "compress attempt=1",
@@ -15513,6 +15662,7 @@
 "message user c9c175d956bb/826",
 "message user a036540eca3b/1267",
 "message assistant 5af94fa49bf3/1266",
+"attr _cold_threshold_retry=false",
 "attr _compress_escaped=[]",
 "attr _compress_forced_overflow=false",
 "attr _compress_hidden_rows_consumed=0",
@@ -15547,7 +15697,7 @@
 "attr _uid_sparse_coverage=false",
 "attr _uid_superseded_store_ids=[]",
 "attr compression_count=1",
-"attrs count=153 sha256=18720cfbf5cdcb583285d8200450bed11e8310995e56d7694dd5505575d96919"
+"attrs count=154 sha256=5bfaeb2941527645e21bf91059534a4b8e2839f07269f241358a23073ad7b972"
 ],
 "sweep-fresh-tail-yield": [
 "compress attempt=1",
@@ -15671,6 +15821,7 @@
 "message assistant 7c6b372997fd/1266",
 "message user a036540eca3b/1267",
 "message assistant 5af94fa49bf3/1266",
+"attr _cold_threshold_retry=false",
 "attr _compress_escaped=[]",
 "attr _compress_forced_overflow=false",
 "attr _compress_hidden_rows_consumed=0",
@@ -15705,7 +15856,7 @@
 "attr _uid_sparse_coverage=false",
 "attr _uid_superseded_store_ids=[]",
 "attr compression_count=1",
-"attrs count=153 sha256=b90cd8ce1154eba15a950d867f35e6ef4a600687a1a860559f415b65ddfa4ed8"
+"attrs count=154 sha256=529bf833d22d763313801e1f9e44db7a13cfc43d52a01936a91d156beb54d39f"
 ],
 "sweep-pass-budget": [
 "compress attempt=1",
@@ -16004,6 +16155,7 @@
 "message assistant 7c79282995bb/1267",
 "message user a219ecf2ec9e/1268",
 "message assistant 4102ec4c78d1/1267",
+"attr _cold_threshold_retry=false",
 "attr _compress_escaped=[]",
 "attr _compress_forced_overflow=false",
 "attr _compress_hidden_rows_consumed=0",
@@ -16037,7 +16189,7 @@
 "attr _uid_sparse_coverage=false",
 "attr _uid_superseded_store_ids=[]",
 "attr compression_count=1",
-"attrs count=153 sha256=bca338c9c7102ff27699bbe302e533121848570365ee24caf834fcd112dba39a"
+"attrs count=154 sha256=f43798e0b5340d16ab42cc94aa5a85b3682e84bc19a040b121d3a0432290f73e"
 ],
 "sweep-pre-leaf-condensation": [
 "compress attempt=1",
@@ -16181,6 +16333,7 @@
 "message user bd1deaea975c/601",
 "message user a036540eca3b/1267",
 "message assistant 5af94fa49bf3/1266",
+"attr _cold_threshold_retry=false",
 "attr _compress_escaped=[]",
 "attr _compress_forced_overflow=false",
 "attr _compress_hidden_rows_consumed=0",
@@ -16215,7 +16368,7 @@
 "attr _uid_sparse_coverage=false",
 "attr _uid_superseded_store_ids=[]",
 "attr compression_count=1",
-"attrs count=153 sha256=febb7b879ad8b6452fe2268fe9fac6f30179bde3dee04dc5f9fb34f2e1e6649a"
+"attrs count=154 sha256=90465903e1740c06f7d625dc4b47a4e1ba74238faf93e85abeea6c6165e1f217"
 ],
 "sweep-stub-first-exit": [
 "compress attempt=1",
@@ -16303,6 +16456,7 @@
 "message tool 42152c96b8ab/237",
 "message assistant b61a04d6dd7e/1600",
 "message tool 5b2c2c72fea5/237",
+"attr _cold_threshold_retry=false",
 "attr _compress_escaped=[]",
 "attr _compress_forced_overflow=false",
 "attr _compress_hidden_rows_consumed=0",
@@ -16321,7 +16475,7 @@
 "attr _store=sha12/len=acd66f87830b/35604",
 "attr _stub_first_exit_now=sha12/len=fd265c889784/84",
 "attr _survival_pass_observed=true",
-"attrs count=153 sha256=254539225cfd0da4845aaea52eb4db3fd232d3193faab35776c88d4e2f64a934"
+"attrs count=154 sha256=0ab5bc520ee2c84fb355f4c14905f0ecfaea7d93a2655425d2afc6ba4e70faa6"
 ],
 "sweep-tail-drained": [
 "compress attempt=1",
@@ -16366,6 +16520,7 @@
 "message system 6a97437a05d4/508",
 "message user 3966be03c944/1267",
 "message assistant 7a468e7d082c/1266",
+"attr _cold_threshold_retry=false",
 "attr _compress_escaped=[]",
 "attr _compress_forced_overflow=false",
 "attr _compress_hidden_rows_consumed=0",
@@ -16386,7 +16541,7 @@
 "attr _pending_emission_candidates=[]",
 "attr _store=sha12/len=ea1402633a11/3476",
 "attr _survival_pass_observed=true",
-"attrs count=153 sha256=ddb3280b40536f4ca8262188913d2f908eb439ec8f611a4f688b7d5df7bfd4fc"
+"attrs count=154 sha256=11f3e24f2b12f03eb3907a51cebb4e68438eb988d10b60e0b9f28da56d514ab2"
 ],
 "tool-pair-groups": [
 "compress attempt=1",
@@ -16494,6 +16649,7 @@
 "message tool b418dd6b02ab/1600",
 "message assistant b61a04d6dd7e/1600",
 "message tool b3f7e026a84f/1600",
+"attr _cold_threshold_retry=false",
 "attr _compress_escaped=[]",
 "attr _compress_forced_overflow=false",
 "attr _compress_hidden_rows_consumed=0",
@@ -16526,7 +16682,7 @@
 "attr _uid_sparse_coverage=false",
 "attr _uid_superseded_store_ids=[]",
 "attr compression_count=1",
-"attrs count=153 sha256=d22c7418dc422e8fb7cc69d16da9e57864280d595bc24175b97b9b2037e5f94f"
+"attrs count=154 sha256=aa2b1f3e9114ebe033e4be9fa9045e061910db8d080890913bc46c813b60eb52"
 ],
 "transcript-gc-locked": [
 "compress attempt=1",
@@ -16619,6 +16775,7 @@
 "message user 69e6fa69ef3f/1444",
 "message assistant b61a04d6dd7e/1600",
 "message tool b3f7e026a84f/1600",
+"attr _cold_threshold_retry=false",
 "attr _compress_escaped=[]",
 "attr _compress_forced_overflow=false",
 "attr _compress_hidden_rows_consumed=0",
@@ -16652,7 +16809,7 @@
 "attr _uid_source_bindings={}",
 "attr _uid_sparse_coverage=false",
 "attr _uid_superseded_store_ids=[]",
-"attrs count=153 sha256=7b02a836a4bd1f7c302464ad0e1ed3dccbcb328793dc101e6ee72ab33d6b7064"
+"attrs count=154 sha256=7519b6b74b40f3857779cc44f45ce7be3a6a21f248895d722720b2c6c07b0e95"
 ],
 "unattributed-rotated-history": [
 "compress attempt=1",
@@ -16746,6 +16903,7 @@
 "message assistant 7c6b372997fd/1266",
 "message user a036540eca3b/1267",
 "message assistant 5af94fa49bf3/1266",
+"attr _cold_threshold_retry=false",
 "attr _compress_escaped=[]",
 "attr _compress_forced_overflow=false",
 "attr _compress_hidden_rows_consumed=0",
@@ -16777,7 +16935,7 @@
 "attr _uid_sparse_coverage=true",
 "attr _uid_superseded_store_ids=[]",
 "attr compression_count=2",
-"attrs count=153 sha256=495e47e526b6f4349da92c39eed526fbde3f634021bfdd06f5651ff6203c48f1"
+"attrs count=154 sha256=fd58db3583720979c54f6f27b716f42b9c2bc6dcc94a2f6ad535397974fb8ba5"
 ],
 "unknown-window-default-target": [
 "compress attempt=1",
@@ -16869,6 +17027,7 @@
 "message assistant 7c6b372997fd/1266",
 "message user a036540eca3b/1267",
 "message assistant 5af94fa49bf3/1266",
+"attr _cold_threshold_retry=false",
 "attr _compress_escaped=[]",
 "attr _compress_forced_overflow=false",
 "attr _compress_hidden_rows_consumed=0",
@@ -16901,7 +17060,7 @@
 "attr _uid_sparse_coverage=false",
 "attr _uid_superseded_store_ids=[]",
 "attr compression_count=1",
-"attrs count=153 sha256=4bdf50c93eaa35287b9bf13715b5050078df9c00f089bc707e87323380f80c48"
+"attrs count=154 sha256=190b634c0dddc4909bf1c26251f6267a87e0d44ca157cdcf7dffed55f2ca692c"
 ],
 "unthresholded-default-target": [
 "compress attempt=1",
@@ -16992,6 +17151,7 @@
 "message assistant 7c6b372997fd/1266",
 "message user a036540eca3b/1267",
 "message assistant 5af94fa49bf3/1266",
+"attr _cold_threshold_retry=false",
 "attr _compress_escaped=[]",
 "attr _compress_forced_overflow=false",
 "attr _compress_hidden_rows_consumed=0",
@@ -17024,6 +17184,6 @@
 "attr _uid_sparse_coverage=false",
 "attr _uid_superseded_store_ids=[]",
 "attr compression_count=1",
-"attrs count=153 sha256=a545300975ce2d669b8e5a37b9268bcee33668d5017860bf629f12a0aa8759cd"
+"attrs count=154 sha256=6b166f4c6c31def44eeefbbbcd291a36b4fcb4e8efb2a218d726127423f048a9"
 ]
 }
