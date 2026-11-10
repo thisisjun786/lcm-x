@@ -313,6 +313,39 @@ def test_an_interrupted_pass_asks_again_at_most_twice(engines, clock, monkeypatc
     assert engine.should_compress(count_messages_tokens(messages)) is False
 
 
+HOST_ITERATIONS = 6
+
+
+@pytest.mark.parametrize("outcome, gate_true", [("shrunk", 1), ("no_progress", 1), ("error", 2)])
+def test_the_pre_api_gate_never_loops_within_one_turn(engines, clock, monkeypatch, outcome, gate_true):
+    # The host calls should_compress(tokens) once per provider request iteration and compresses when it says True;
+    # no provider call lands in between, so every iteration sees the same last call.
+    engine = engines()
+    messages = _messages(rows=2) if outcome == "no_progress" else _messages()
+    tokens = count_messages_tokens(messages)
+    if outcome == "no_progress":
+        engine.threshold_tokens = int(tokens / 0.97)
+    if outcome == "error":
+        def interrupted(*args, **kwargs):
+            raise RuntimeError("synthetic interruption")
+
+        monkeypatch.setattr(engine, "_compress_impl", interrupted)
+    _provider_call(engine, clock, T0)
+    clock.now = T0 + GAP
+    gate = []
+    for _iteration in range(HOST_ITERATIONS):
+        tokens = count_messages_tokens(messages)
+        gate.append(engine.should_compress(tokens))
+        if gate[-1]:
+            try:
+                messages = engine.compress(messages, current_tokens=tokens)
+            except RuntimeError:
+                pass
+    assert gate == [True] * gate_true + [False] * (HOST_ITERATIONS - gate_true), gate
+    event = _event(engine)
+    assert (event["outcome"], event["requests"]) == (outcome, gate_true)
+
+
 def test_a_requested_record_left_by_a_dead_pass_asks_again(engines, clock):
     engine = engines()
     _provider_call(engine, clock, T0)
