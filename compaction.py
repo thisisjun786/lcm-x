@@ -38,6 +38,7 @@ from .escalation import (
 from .externalize import ingest_payload_writes, payload_lookup_scope
 from .fresh_tail import tool_group_safe_end
 from . import leaf_prep
+from .compaction_request import route_calibration, route_key
 from .config import LCMConfig
 from .lifecycle_state import LifecycleBindingChangedError, LifecyclePublicationConflictError
 from .message_content import text_content_for_pattern_matching
@@ -262,7 +263,10 @@ class CompactionMixin:
         if self.threshold_tokens <= 0:
             return False
         if (tokens or 0) < self.threshold_tokens and self._cold_gap_compaction_due(
-                int(tokens or 0), ingested=not getattr(self, "_consecutive_ingest_failures", 0)):
+                int(tokens or 0), ingested=not getattr(self, "_consecutive_ingest_failures", 0),
+                # The host's figure may be anchored on the last call's usage (another model's tokenizer after a
+                # flip); select_context counted this request itself just before the gate.
+                request_tokens=self._pending_request_tokens_for_conversation()):
             # Fork cold cache (lina#455): the pre-API gate is the entrance that sees this request's system prompt.
             return True
         return tokens >= self.threshold_tokens and not self._sweep_budget_hold_applies(tokens, managed_scope=True)
@@ -378,7 +382,8 @@ class CompactionMixin:
                 ):
                     self._compaction_request.cleanup_only_due_to_boundary_cooldown = True
                 if not force_overflow_requested and max(rough, replay_rough) < self.threshold_tokens:
-                    if self._cold_gap_compaction_due(max(rough, replay_rough), ingested=True):
+                    if self._cold_gap_compaction_due(max(rough, replay_rough), ingested=True,
+                                                     request_tokens=max(rough, replay_rough)):
                         return self._mark_preflight_compression_requested()
                     return self._mark_below_threshold_maintenance()
                 return self._mark_preflight_compression_requested()
@@ -397,7 +402,8 @@ class CompactionMixin:
                 and self._sweep_budget_hold_applies(max(rough, replay_rough, self.last_prompt_tokens or 0))
             ):
                 return False
-            if self._cold_gap_compaction_due(max(rough, replay_rough), ingested=True):
+            if self._cold_gap_compaction_due(max(rough, replay_rough), ingested=True,
+                                             request_tokens=max(rough, replay_rough)):
                 return self._mark_preflight_compression_requested()
             if pre_ingest_placeholder_cleanup_requested:
                 return self._mark_preflight_compression_requested(
@@ -491,7 +497,7 @@ class CompactionMixin:
             self._last_compression_noop_reason = reason
             logger.info("LCM preflight compression no-op: %s", reason)
             return False
-        if self._cold_gap_compaction_due(rough, ingested=replay_messages is not None):
+        if self._cold_gap_compaction_due(rough, ingested=replay_messages is not None, request_tokens=rough):
             return self._mark_preflight_compression_requested()
         self._refresh_raw_backlog_debt(messages, observed_tokens=rough)
         # With critical pressure disabled, routine debt remains recorded until
@@ -506,13 +512,20 @@ class CompactionMixin:
             return self._mark_below_threshold_maintenance()
         return False
 
-    def _cold_gap_compaction_due(self, tokens: int, *, ingested: bool) -> bool:
+    def _cold_gap_compaction_due(self, tokens: int, *, ingested: bool, request_tokens: Optional[int]) -> bool:
         """Fork cold-cache trigger (cold gap, lina#455): True (and the one-shot ``cold_gap`` request set) when this
         managed conversation is below the threshold, its last provider call's provider-reported prompt reached
         ``cold_gap_min_prompt_tokens``, no hold/cooldown/closed route applies, the next call will be cold for one of
         the enabled causes (``_cold_cache_cause``), and that last call's cold-cache event is still open: never
         requested, or requested by a pass that started and did not end with a result (raised, cancelled, process
-        died) and is not running now, at most ``_COLD_CACHE_MAX_REQUESTS`` times (durable across restarts)."""
+        died) and is not running now, at most ``_COLD_CACHE_MAX_REQUESTS`` times (durable across restarts).
+
+        The floor reads the provider-reported prompt of the last call. When that call ran on another model or
+        provider, that figure is the other route's count of the history (the deployment measured x0.63 to x1.62
+        between routes; why is not verified). The floor then reads the larger of that figure and an estimate of
+        what the next route will be sent: ``request_tokens`` (the engine's own count of the request about to be
+        sent) times the next route's reported/counted ratio at its latest call in this conversation. No such call,
+        or no count: the last call's figure alone (as before)."""
         gap_setting = int(self._config.cold_gap_compaction_seconds or 0)
         if gap_setting <= 0 or self.threshold_tokens <= 0 or int(tokens or 0) >= self.threshold_tokens:
             return False
@@ -530,7 +543,13 @@ class CompactionMixin:
         gap = now - float(last_call_at)
         observed = int(telemetry.get("last_observed_prompt_tokens") or 0) or int(self.last_prompt_tokens or 0)
         min_tokens = int(self._config.cold_gap_min_prompt_tokens)
-        if observed < min_tokens:
+        floor_tokens = observed
+        if request_tokens and self._cold_cache_route_changed(telemetry):
+            calibration = route_calibration(telemetry, route_key(self.provider, self.model))
+            if calibration is not None:
+                reported, counted = calibration
+                floor_tokens = max(observed, int(int(request_tokens) * reported / counted))
+        if floor_tokens < min_tokens:
             return False
         cause = self._cold_cache_cause(telemetry, float(last_call_at), gap, gap_setting)
         if cause is None:
@@ -552,6 +571,7 @@ class CompactionMixin:
         owner = f"{os.getpid()}:{uuid.uuid4().hex[:12]}"
         event = {"requested_at": now, "gap_seconds": round(gap, 1), "observed_prompt_tokens": observed,
                  "leaf_passes": None, "tokens_before": None, "tokens_after": None, "duration_ms": None,
+                 "floor_tokens": floor_tokens,
                  "stop_reason": "requested", "cause": cause, "requests": requests, "attempts": 0,
                  "outcome": "requested", "pass_started": False, "owner": owner}
         self._store.write_metadata_json(
@@ -563,8 +583,8 @@ class CompactionMixin:
                         int(gap), observed, min_tokens, int(self.threshold_tokens))
         else:
             logger.info("LCM cold-gap compaction requested: gap=%ds observed_prompt_tokens=%d min=%d threshold=%d "
-                        "cause=%s requests=%d", int(gap), observed, min_tokens, int(self.threshold_tokens), cause,
-                        requests)
+                        "floor_tokens=%d cause=%s requests=%d", int(gap), observed, min_tokens,
+                        int(self.threshold_tokens), floor_tokens, cause, requests)
         return True
 
     def _cold_cache_causes(self) -> frozenset:
@@ -582,16 +602,22 @@ class CompactionMixin:
             return "idle"
         if not causes & {"model", "prompt"} or self._compaction_committed_since(telemetry, last_call_at):
             return None
-        if "model" in causes:
-            for current, recorded in ((self.model, telemetry.get("model")), (self.provider, telemetry.get("provider"))):
-                if current and isinstance(recorded, str) and recorded and str(current) != recorded:
-                    return "model_change"
+        if "model" in causes and self._cold_cache_route_changed(telemetry):
+            return "model_change"
         if "prompt" in causes:
             recorded = telemetry.get("last_system_prompt_sha")
             pending = self._pending_system_prompt_sha_for_conversation()
             if isinstance(recorded, str) and recorded and pending and pending != recorded:
                 return "prompt_change"
         return None
+
+    def _cold_cache_route_changed(self, telemetry: Dict[str, Any]) -> bool:
+        """The model or provider the next call uses differs from the one recorded with the last call (a recorded
+        value is required: a record without ``model``/``provider`` never counts as a change)."""
+        for current, recorded in ((self.model, telemetry.get("model")), (self.provider, telemetry.get("provider"))):
+            if current and isinstance(recorded, str) and recorded and str(current) != recorded:
+                return True
+        return False
 
     def _compaction_committed_since(self, telemetry: Dict[str, Any], last_call_at: float) -> bool:
         """True when a compaction committed after the provider call ``telemetry`` records: a durable leaf

@@ -18,6 +18,7 @@ import pytest
 
 import hermes_lcm.engine as lcm_engine
 from hermes_lcm import compaction_request
+from hermes_lcm.compaction_request import ROUTE_CALIBRATION_FIELD
 from hermes_lcm.config import LCMConfig
 from hermes_lcm.engine import LCMEngine
 from hermes_lcm.escalation import SweepBudgetExhausted
@@ -893,6 +894,195 @@ def test_a_band_pass_where_both_attempts_free_nothing_keeps_the_list(deployed, c
     assert (_event(engine)["attempts"], _event(engine)["outcome"]) == (2, "no_progress")
     assert _store_digest(engine) == stored_before
     assert engine.should_compress(host) is False  # consumed: the host's next iteration sends, no loop
+
+
+# -- 12. the floor after a model or provider flip: a ratio learned from this conversation's own calls -------------------
+
+
+A, B = ("model-a", "provider-a"), ("model-b", "provider-a")
+
+
+def _route(engine, model, provider):
+    engine.update_model(model, WINDOW, provider=provider, api_mode="responses")
+
+
+def _call(engine, clock, at, route, request, reported, *, observe=True):
+    """One provider call on ``route``: select_context sees ``request``, the provider reports ``reported``."""
+    _route(engine, *route)
+    if observe:
+        assert engine.select_context(request) is None
+    _provider_call(engine, clock, at, prompt_tokens=reported)
+    return count_messages_tokens(request)
+
+
+def _calibration(engine) -> list:
+    return (engine._store.read_compaction_telemetry(CONVERSATION) or {}).get(ROUTE_CALIBRATION_FIELD)
+
+
+def _seed(engine, clock, *, last_reported, last_request, ratio_factor):
+    """An earlier call on B, then the last call on A (``last_reported`` for ``last_request``); B's reported/counted
+    ratio is ``ratio_factor`` times A's, the shape the deployment measured (x1.51 to x1.62)."""
+    a_ratio = last_reported / count_messages_tokens(last_request)
+    b_request = _band_tool_conversation(150_000)
+    b_counted = count_messages_tokens(b_request)
+    _call(engine, clock, T0 - 600, B, b_request, int(b_counted * a_ratio * ratio_factor))
+    _call(engine, clock, T0, A, last_request, last_reported)
+    reported, counted = _calibration(engine)[0][1:]
+    return reported / counted
+
+
+def test_a_flip_estimates_the_next_routes_prompt_from_its_learned_ratio(deployed, clock, caplog):
+    # 11-10 21:27 shape: last call on A reported 268k; the same history on B is ~1.6x by B's own count. The engine's
+    # count of the new request and the last observed figure are both under the 300k floor: only the ratio sees it.
+    engine = deployed(0.5)
+    b_ratio = _seed(engine, clock, last_reported=268_000, last_request=_band_tool_conversation(260_000),
+                    ratio_factor=1.62)
+    clock.now = T0 + 20
+    _route(engine, *B)
+    messages = _band_tool_conversation(265_000)
+    counted_now = count_messages_tokens(messages)
+    floor = engine._config.cold_gap_min_prompt_tokens
+    assert counted_now < floor and 268_000 < floor and floor <= counted_now * b_ratio < engine.threshold_tokens
+    with caplog.at_level(logging.INFO):
+        assert engine.should_compress_preflight(messages) is True
+    event = _event(engine)
+    assert (event["cause"], event["observed_prompt_tokens"]) == ("model_change", 268_000)
+    assert abs(event["floor_tokens"] - counted_now * b_ratio) <= 0.02 * counted_now * b_ratio
+    assert [f"floor_tokens={event['floor_tokens']} cause=model_change" in line
+            for line in _requested_lines(caplog)] == [True]
+    result = engine.compress(messages, current_tokens=counted_now)
+    assert _event(engine)["outcome"] == "shrunk" and count_messages_tokens(result) < 0.95 * counted_now
+
+
+def test_a_flip_after_an_idle_gap_uses_the_same_estimate(deployed, clock):
+    # 11-08 20:10 shape: last call on A 233k, idle 23,178 s, the next route's estimate ~369k.
+    engine = deployed(0.5)
+    b_ratio = _seed(engine, clock, last_reported=233_000, last_request=_band_tool_conversation(226_000),
+                    ratio_factor=1.58)
+    clock.now = T0 + 23_178
+    _route(engine, *B)
+    messages = _band_tool_conversation(230_000)
+    assert count_messages_tokens(messages) * b_ratio >= engine._config.cold_gap_min_prompt_tokens
+    assert engine.should_compress_preflight(messages) is True
+    event = _event(engine)
+    assert (event["cause"], event["observed_prompt_tokens"]) == ("idle", 233_000)
+    assert event["floor_tokens"] >= engine._config.cold_gap_min_prompt_tokens
+
+
+def test_a_flip_under_the_floor_on_both_figures_does_not_ask(deployed, clock):
+    engine = deployed(0.5)
+    b_ratio = _seed(engine, clock, last_reported=268_000, last_request=_band_tool_conversation(260_000),
+                    ratio_factor=1.62)
+    clock.now = T0 + GAP  # idle and model change both due
+    _route(engine, *B)
+    messages = _band_tool_conversation(150_000)
+    assert count_messages_tokens(messages) * b_ratio < engine._config.cold_gap_min_prompt_tokens
+    assert engine.should_compress_preflight(messages) is False
+    assert engine._compaction_request.cold_gap is False and _record(engine) == {}
+
+
+def test_a_route_this_conversation_never_called_keeps_the_last_observed_floor(deployed, clock):
+    # No ratio for the next route: exactly 687dbc6b (the last call's figure decides), even with a large request.
+    engine = deployed(0.5)
+    _seed(engine, clock, last_reported=268_000, last_request=_band_tool_conversation(260_000), ratio_factor=1.62)
+    clock.now = T0 + GAP
+    _route(engine, "model-c", "provider-c")
+    assert engine.should_compress_preflight(_band_tool_conversation(265_000)) is False
+    assert _record(engine) == {}
+
+
+@pytest.mark.parametrize("gap", [5, GAP])
+def test_the_same_route_keeps_the_provider_reported_floor(deployed, clock, gap):
+    engine = deployed(0.5)
+    _seed(engine, clock, last_reported=268_000, last_request=_band_tool_conversation(260_000), ratio_factor=1.62)
+    clock.now = T0 + gap
+    messages = _band_tool_conversation(430_000)
+    assert count_messages_tokens(messages) >= engine._config.cold_gap_min_prompt_tokens
+    assert engine.should_compress_preflight(messages) is False
+    assert engine.should_compress(count_messages_tokens(messages)) is False
+    assert _record(engine) == {}
+
+
+def test_a_compaction_after_the_last_call_still_suppresses_the_flip(deployed, clock):
+    engine = deployed(0.5)
+    _seed(engine, clock, last_reported=268_000, last_request=_band_tool_conversation(260_000), ratio_factor=1.62)
+    small = _messages()
+    engine.compress(small, current_tokens=count_messages_tokens(small), force=True)  # the engine compacted
+    assert engine.compression_count >= 1
+    clock.now = T0 + 20
+    _route(engine, *B)
+    assert engine.should_compress_preflight(_band_tool_conversation(265_000)) is False
+    assert _record(engine) == {}
+
+
+@pytest.mark.parametrize("observed", [True, False], ids=["after_select_context", "before_select_context"])
+def test_the_gate_estimates_from_select_contexts_count(deployed, clock, observed):
+    # The host's gate figure is anchored on the last call's usage (A's count plus a delta estimate).
+    engine = deployed(0.5)
+    b_ratio = _seed(engine, clock, last_reported=268_000, last_request=_band_tool_conversation(260_000),
+                    ratio_factor=1.62)
+    clock.now = T0 + 20
+    _route(engine, *B)
+    request = _band_tool_conversation(265_000)
+    anchored = 268_000 + 2_000
+    if observed:  # the per-request hook runs right before the gate
+        assert engine.select_context(request) is None
+        assert engine.should_compress(anchored) is True
+        event = _event(engine)
+        assert event["cause"] == "model_change"
+        assert abs(event["floor_tokens"] - count_messages_tokens(request) * b_ratio) <= 1
+    else:  # a gate call before this request's select_context (the host's turn-start gate): the anchored figure only
+        assert engine.should_compress(anchored) is False
+        assert _record(engine) == {}
+
+
+def test_each_answer_records_its_routes_pair_with_the_call(deployed, clock, monkeypatch):
+    engine = deployed(0.5)
+    writes = []
+    original = engine._store.increment_compaction_telemetry
+
+    def spy(conversation_id, increment, updates):
+        writes.append(dict(updates))
+        return original(conversation_id, increment, updates)
+
+    monkeypatch.setattr(engine._store, "increment_compaction_telemetry", spy)
+    small = _messages()
+    counted = _call(engine, clock, T0, A, small, 9_000)
+    assert len(writes) == 1 and writes[0]["last_api_call_at"] == T0  # one write carries both
+    assert writes[0][ROUTE_CALIBRATION_FIELD] == [["provider-a/model-a", 9_000, counted]]
+    _call(engine, clock, T0 + 1, B, small, 14_000)
+    _call(engine, clock, T0 + 2, A, small + _messages(rows=2)[1:], 9_500)
+    entries = _calibration(engine)
+    assert [entry[0] for entry in entries] == ["provider-a/model-b", "provider-a/model-a"]  # B survives, A latest
+    assert entries[1][1] == 9_500
+    _call(engine, clock, T0 + 3, B, small, 15_000, observe=False)  # no engine count: B's pair is kept as it was
+    assert _calibration(engine)[0] == ["provider-a/model-b", 14_000, counted]
+
+
+def test_the_calibration_keeps_the_eight_latest_routes(deployed, clock):
+    engine = deployed(0.5)
+    for index in range(10):
+        _call(engine, clock, T0 + index, (f"model-{index}", "provider-a"), _messages(), 9_000 + index)
+    entries = _calibration(engine)
+    assert [entry[0] for entry in entries] == [f"provider-a/model-{index}" for index in range(2, 10)]
+
+
+@pytest.mark.parametrize("raw", [None, "garbage", [["k", 1]], [["provider-a/model-b", "x", 1], 7]])
+def test_an_old_or_malformed_calibration_reads_empty(deployed, clock, raw):
+    engine = deployed(0.5)
+    _seed(engine, clock, last_reported=268_000, last_request=_band_tool_conversation(260_000), ratio_factor=1.62)
+    telemetry = engine._store.read_compaction_telemetry(CONVERSATION)
+    if raw is None:
+        telemetry.pop(ROUTE_CALIBRATION_FIELD)
+    else:
+        telemetry[ROUTE_CALIBRATION_FIELD] = raw
+    engine._store.write_compaction_telemetry(CONVERSATION, telemetry)
+    clock.now = T0 + 20
+    _route(engine, *B)
+    assert engine.should_compress_preflight(_band_tool_conversation(265_000)) is False  # as 687dbc6b
+    assert _record(engine) == {}
+    _call(engine, clock, T0 + 30, B, _messages(), 9_000)
+    assert [entry[0] for entry in _calibration(engine)] == ["provider-a/model-b"]
 
 
 def test_seconds_zero_turns_the_whole_family_off(engines, clock):

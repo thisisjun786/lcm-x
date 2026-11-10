@@ -153,7 +153,13 @@ from .reconcile import _hermes_salvage_protected_positions
 from .reconcile import _commit_proof_identity_digest, _has_lossy_redacted_identity, _merge_append_cut, _proof_user_identity
 from .compaction import CompactionMixin
 from . import leaf_prep
-from .compaction_request import CompactionRequest, system_prompt_sha
+from .compaction_request import (
+    ROUTE_CALIBRATION_FIELD,
+    CompactionRequest,
+    route_key,
+    system_prompt_sha,
+    updated_route_calibration,
+)
 from .compress_run import CompressRun
 from .identity_anchor import IdentityAnchorMixin, _raw_remainder, identity_anchor_enabled
 from .host_uid import HostUidShadowMixin, _valid_uid
@@ -2212,16 +2218,17 @@ class LCMEngine(
 
     def select_context(self, request_messages, conversation_messages=None, incoming_message=None,
                        budget_tokens=None, **kwargs):
-        """Fork cold cache (lina#455): observe the system prompt of the request about to be sent (its hash only)
-        for the ``prompt_change`` cause. Always returns None (the request is unchanged), never raises, never
+        """Fork cold cache (lina#455): observe the request about to be sent: its system prompt's hash (the
+        ``prompt_change`` cause) and the engine's own token count of it (the cold floor after a model or provider
+        change, read by the pre-API gate). Always returns None (the request is unchanged), never raises, never
         mutates its inputs, and does nothing for bypassed, stateless or auxiliary sessions."""
         del conversation_messages, incoming_message, budget_tokens, kwargs
         try:
             if self._bypasses_lcm_context_management() or not self._conversation_id:
                 return None
-            sha = system_prompt_sha(request_messages)
-            if sha is not None:
-                self._pending_system_prompt_sha = (str(self._conversation_id), sha)
+            conversation = str(self._conversation_id)
+            sha = system_prompt_sha(request_messages) or self._pending_system_prompt_sha_for_conversation()
+            self._pending_system_prompt_sha = (conversation, sha, count_messages_tokens(request_messages))
         except Exception:
             logger.debug("LCM select_context system prompt observation failed", exc_info=True)
         return None
@@ -2229,8 +2236,15 @@ class LCMEngine(
     def _pending_system_prompt_sha_for_conversation(self) -> Optional[str]:
         """The system prompt hash select_context observed for the current conversation, else None."""
         pending = getattr(self, "_pending_system_prompt_sha", None)
-        if isinstance(pending, tuple) and len(pending) == 2 and pending[0] == str(self._conversation_id or ""):
+        if isinstance(pending, tuple) and len(pending) == 3 and pending[0] == str(self._conversation_id or ""):
             return pending[1]
+        return None
+
+    def _pending_request_tokens_for_conversation(self) -> Optional[int]:
+        """The engine's own token count of the request select_context last observed for this conversation."""
+        pending = getattr(self, "_pending_system_prompt_sha", None)
+        if isinstance(pending, tuple) and len(pending) == 3 and pending[0] == str(self._conversation_id or ""):
+            return pending[2]
         return None
 
     @property
@@ -2393,6 +2407,11 @@ class LCMEngine(
                 # Fork cold cache (lina#455): the system prompt this call was sent with (select_context's hash).
                 "last_system_prompt_sha": (self._pending_system_prompt_sha_for_conversation()
                                            or existing.get("last_system_prompt_sha")),
+                # Fork cold cache (lina#455): this route's provider-reported prompt next to the engine's own count
+                # of the request select_context saw, so a later flip back to it can rescale the engine's count.
+                ROUTE_CALIBRATION_FIELD: updated_route_calibration(
+                    existing, route_key(self.provider, self.model), prompt_tokens,
+                    self._pending_request_tokens_for_conversation()),
                 "last_leaf_compaction_at": last_leaf_compaction_at,
                 "last_compaction_duration_ms": last_compaction_duration_ms,
                 "total_compactions": total_compactions,
@@ -2410,6 +2429,9 @@ class LCMEngine(
             )
             self._compaction_telemetry_counter_rebaseline_pending = False
             self._compaction_telemetry_turn_reset_pending = False
+            pending = getattr(self, "_pending_system_prompt_sha", None)
+            if isinstance(pending, tuple) and len(pending) == 3:  # the count belonged to the request just answered
+                self._pending_system_prompt_sha = (pending[0], pending[1], None)
         except Exception:
             logger.debug("LCM compaction telemetry update failed", exc_info=True)
 
