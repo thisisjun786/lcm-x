@@ -419,6 +419,7 @@ OBSERVED_ATTRIBUTES = (
     "_assemble_overflow_recovery_context",
     "_build_preserved_objective_summary_part",
     "_bypasses_lcm_context_management",
+    "_cold_threshold_retry",
     "_committed_replay_drops",
     "_compaction_request",
     "_compress_dropped_ignored_rows",

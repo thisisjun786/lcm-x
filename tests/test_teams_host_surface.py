@@ -93,6 +93,9 @@ HOST_ONLY = {
     # #1014: waits for this engine's queued incremental embedding passes (tests
     # and diagnostics), like drain_rollup_maintenance; it reads no store.
     "drain_embedding_maintenance",
+    # Fork lina#455: the host's ContextEngine.select_context hook. It always returns None, reads no store, writes
+    # only an in-memory hash of the request's system prompt for the bound conversation, and grants nothing.
+    "select_context",
 }
 
 

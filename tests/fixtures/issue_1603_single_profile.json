@@ -151,6 +151,7 @@
     "cache_friendly_condensation_enabled": false,
     "cache_friendly_min_debt_groups": 2,
     "codex_gpt55_autoraise_enabled": true,
+    "cold_cache_causes": "idle,model,prompt",
     "cold_gap_compaction_seconds": 0,
     "cold_gap_min_prompt_tokens": 300000,
     "condensation_fanin": 4,
@@ -175,6 +176,7 @@
       "threshold_full_sweep_max_passes": "default",
       "cold_gap_compaction_seconds": "default",
       "cold_gap_min_prompt_tokens": "default",
+      "cold_cache_causes": "default",
       "summary_spend_window_seconds": "env:LCM_SUMMARY_SPEND_WINDOW_SECONDS",
       "summary_timeout_ms": "env:LCM_SUMMARY_TIMEOUT_MS"
     },

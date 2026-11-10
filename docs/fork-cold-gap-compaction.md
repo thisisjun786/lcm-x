@@ -66,3 +66,45 @@ the sweep numbers come from `threshold_full_sweep`) and the two settings under `
 ## Before enabling
 
 An operator replay on real data is required before merge. Suggested start: `3600` seconds with the default min.
+
+## Cold-cache causes, interruption and no-progress (lina#455)
+
+Settings: `LCM_COLD_CACHE_CAUSES` / `lcm.cold_cache_causes`, default `idle,model,prompt` (comma list; unknown names
+ignored with a warning; a value naming none of them is ignored). `cold_gap_compaction_seconds = 0` still turns the
+whole family off; the other settings and defaults are unchanged.
+
+Causes (`_cold_cache_cause`), same floor (`cold_gap_min_prompt_tokens`), holds and exclusions as the idle trigger:
+
+- `idle`: the gap reached the setting (unchanged; its log line is unchanged too);
+- `model_change`: `self.model` / `self.provider` (set by `update_model`) differ from the `model` / `provider` of the
+  last call's telemetry record;
+- `prompt_change`: the sha256 of the canonical JSON of the leading system message(s) of the request about to be sent
+  differs from `last_system_prompt_sha` of the last call's record. `LCMEngine.select_context` observes it (always
+  returns None, never raises, never mutates, no-op for bypassed traffic); the response hook writes it with
+  `last_api_call_at` in one telemetry update. Because the prompt is only known at assembly, this cause is consumed by
+  the pre-API gate `should_compress(tokens)`; preflight and the gate call the same trigger.
+
+A compaction committed after the last call (`last_leaf_compaction_at >= last_api_call_at`, or compactions this
+process counted that the record has not seen) suppresses `model_change` and `prompt_change`. Non-idle causes log
+`LCM cold-gap compaction requested: ... cause=<cause> requests=<n>`.
+
+One-shot bookkeeping (`cold_gap_compaction:<conversation>`, keys kept): `last_event` adds `cause`, `requests`,
+`attempts`, `outcome` (`requested` | `shrunk` | `no_progress` | `error`), `pass_started` and `owner`. The event is
+consumed when the pass ends with a result (`shrunk` or `no_progress`). A pass that raised (`error`) or started and never
+finished (`requested` with `pass_started`, e.g. the process died) may be requested again when this process is not
+running it (another owner, or older than the foreground hard budget), at most 2 requests per `last_api_call_at`. A
+request whose pass never started stays consumed (the previous once-per-gap behaviour across a restart).
+
+No progress: a cold pass that leaves the same number of rows and less than 5% fewer tokens is retried once inside
+the same `compress()` call (same foreground budget) with the pass treated as over the threshold for the #651
+candidate: the #671 stub-first free cuts (taken only when they free more than 5%), then the same threshold sweep and
+leaf/condensation loop. The exit fit (#668), deterministic L3 truncation and memory-block cuts stay off (the host
+count is still below the threshold), and neither attempt arms a no-progress, hidden-only or sweep-budget hold. If the
+retry frees nothing too, `compress()` returns the original list, logs one WARNING
+`LCM cold-cache compaction freed nothing: cause=... attempts=2 stop=... first_stop=... rows=... tokens=...` and
+records `outcome=no_progress`.
+
+Leaf valve (views that carry host uids only, the d8a937e3 scope): when the oldest chunk gives the leaf builder
+nothing (an empty leaf input that is not a retained-row block), the selection leaves it unselected and takes the next chunk, at most 3
+times per pass, with one WARNING per skip naming store ids and content lengths. Nothing is deleted. A pass whose
+every chunk was skipped stops with `no_usable_leaf_input` and the original no-op reason (no progress, not drained).

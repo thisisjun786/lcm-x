@@ -139,6 +139,7 @@ CONFIG_ROWS = (
     ('threshold_full_sweep_max_passes', 'LCM_THRESHOLD_FULL_SWEEP_MAX_PASSES', 'int', 12),
     ('cold_gap_compaction_seconds', 'LCM_COLD_GAP_COMPACTION_SECONDS', 'int', 0),
     ('cold_gap_min_prompt_tokens', 'LCM_COLD_GAP_MIN_PROMPT_TOKENS', 'int', 300000),
+    ('cold_cache_causes', 'LCM_COLD_CACHE_CAUSES', 'str', 'idle,model,prompt'),
     # config._parse_str_env -> LCMConfig.from_env (construction time).
     ('custom_instructions', 'LCM_CUSTOM_INSTRUCTIONS', 'str', ''),
     ('extraction_model', 'LCM_EXTRACTION_MODEL', 'str', ''),
@@ -190,6 +191,7 @@ SPECIAL = {
     "threshold_full_sweep_max_passes": (D, D, D, D, 1, D, D, D, D, D, D, D, D, D, D, D),  # 1-64 only
     "cold_gap_compaction_seconds": (D, D, D, D, D, 0, D, D, D, D, D, D, D, D, D, D),  # 0 or 300-86400 only
     "cold_gap_min_prompt_tokens": (D, D, D, D, 1, D, D, D, D, D, D, D, D, D, D, D),  # 1-10000000 only
+    "cold_cache_causes": (D,) * 16,  # names from idle,model,prompt only; none of these columns names one
 }
 
 

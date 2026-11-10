@@ -18,8 +18,10 @@ from __future__ import annotations
 import copy
 import json
 import logging
+import os
 import sys
 import time
+import uuid
 from collections import Counter
 from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, List, Literal, Optional
@@ -77,7 +79,16 @@ _THRESHOLD_FULL_SWEEP_PARTIAL_STOP_REASONS = frozenset({
     "condensation_error",
     "condensation_no_progress",
     "no_same_depth_condensation_group",
+    "no_usable_leaf_input",  # fork: the leaf valve skipped every chunk it could; nothing was usable
 })
+# Fork cold cache (lina#455): requests one cold-cache event (one last provider call) may make, and the record
+# outcomes that end it. ``requested`` (a pass started and never finished) and ``error`` may ask again.
+_COLD_CACHE_MAX_REQUESTS = 2
+_COLD_CACHE_FINAL_OUTCOMES = frozenset({"shrunk", "no_progress"})
+# The host's progress rule: fewer rows, or more than 5% fewer tokens.
+_COLD_CACHE_PROGRESS_TOKEN_SHARE = 0.95
+# Fork leaf valve: oldest chunks one leaf selection may skip because no row of theirs can become leaf input.
+_LEAF_VALVE_MAX_SKIPS = 3
 
 
 @dataclass
@@ -89,6 +100,10 @@ class _CompressionState:
     automatic_preflight_requested: bool = False
     hold_fit_only_requested: bool = False
     cold_gap_requested: bool = False
+    cold_threshold_retry: bool = False  # fork: the second cold attempt enters the over-threshold branches
+    valve_skipped: set = field(default_factory=set)  # fork leaf valve: id() of the host rows it skipped
+    valve_skips: int = 0
+    valve_reason: str = ""
     _compress_started: float = 0.0
     observed_prompt_tokens: Optional[int] = None
     force_overflow: bool = False
@@ -246,6 +261,10 @@ class CompactionMixin:
             return True
         if self.threshold_tokens <= 0:
             return False
+        if (tokens or 0) < self.threshold_tokens and self._cold_gap_compaction_due(
+                int(tokens or 0), ingested=not getattr(self, "_consecutive_ingest_failures", 0)):
+            # Fork cold cache (lina#455): the pre-API gate is the entrance that sees this request's system prompt.
+            return True
         return tokens >= self.threshold_tokens and not self._sweep_budget_hold_applies(tokens, managed_scope=True)
 
     def should_compress_preflight(self, messages):
@@ -488,10 +507,12 @@ class CompactionMixin:
         return False
 
     def _cold_gap_compaction_due(self, tokens: int, *, ingested: bool) -> bool:
-        """Fork cold-gap trigger: True (and the one-shot ``cold_gap`` request set) when this managed conversation is
-        below the threshold, its last provider call is at least ``cold_gap_compaction_seconds`` old, that call's
-        provider-reported prompt reached ``cold_gap_min_prompt_tokens``, no hold/cooldown/closed route applies, and
-        no cold-gap compaction was requested yet for that same last call (durable, so once per idle gap)."""
+        """Fork cold-cache trigger (cold gap, lina#455): True (and the one-shot ``cold_gap`` request set) when this
+        managed conversation is below the threshold, its last provider call's provider-reported prompt reached
+        ``cold_gap_min_prompt_tokens``, no hold/cooldown/closed route applies, the next call will be cold for one of
+        the enabled causes (``_cold_cache_cause``), and that last call's cold-cache event is still open: never
+        requested, or requested by a pass that started and did not end with a result (raised, cancelled, process
+        died) and is not running now, at most ``_COLD_CACHE_MAX_REQUESTS`` times (durable across restarts)."""
         gap_setting = int(self._config.cold_gap_compaction_seconds or 0)
         if gap_setting <= 0 or self.threshold_tokens <= 0 or int(tokens or 0) >= self.threshold_tokens:
             return False
@@ -507,52 +528,167 @@ class CompactionMixin:
             return False
         now = time.time()
         gap = now - float(last_call_at)
-        if gap < gap_setting:
-            return False
         observed = int(telemetry.get("last_observed_prompt_tokens") or 0) or int(self.last_prompt_tokens or 0)
         min_tokens = int(self._config.cold_gap_min_prompt_tokens)
         if observed < min_tokens:
             return False
+        cause = self._cold_cache_cause(telemetry, float(last_call_at), gap, gap_setting)
+        if cause is None:
+            return False
         key = self._cold_gap_metadata_key(conversation_id)
         record = self._store.read_metadata_json(key)
         record = record if isinstance(record, dict) else {}
+        requests = 1
         if record.get("fired_for_last_api_call_at") == last_call_at:
-            return False
+            previous = record.get("last_event") if isinstance(record.get("last_event"), dict) else {}
+            outcome = previous.get("outcome")
+            # A record without an outcome is a pre-#455 record: it was consumed when it was requested.
+            if (outcome is None or outcome in _COLD_CACHE_FINAL_OUTCOMES
+                    or (outcome == "requested" and not previous.get("pass_started"))):
+                return False
+            requests = int(previous.get("requests") or 1) + 1
+            if requests > _COLD_CACHE_MAX_REQUESTS or self._cold_cache_request_live(previous):
+                return False
+        owner = f"{os.getpid()}:{uuid.uuid4().hex[:12]}"
         event = {"requested_at": now, "gap_seconds": round(gap, 1), "observed_prompt_tokens": observed,
                  "leaf_passes": None, "tokens_before": None, "tokens_after": None, "duration_ms": None,
-                 "stop_reason": "requested"}
+                 "stop_reason": "requested", "cause": cause, "requests": requests, "attempts": 0,
+                 "outcome": "requested", "pass_started": False, "owner": owner}
         self._store.write_metadata_json(
             [key], json.dumps({"fired_for_last_api_call_at": last_call_at, "last_event": event}, sort_keys=True))
         self._compaction_request.cold_gap = True
-        logger.info("LCM cold-gap compaction requested: gap=%ds observed_prompt_tokens=%d min=%d threshold=%d",
-                    int(gap), observed, min_tokens, int(self.threshold_tokens))
+        self._cold_cache_inflight = (str(conversation_id), last_call_at, owner, time.monotonic(), cause)
+        if cause == "idle":  # the idle line is today's line, byte for byte
+            logger.info("LCM cold-gap compaction requested: gap=%ds observed_prompt_tokens=%d min=%d threshold=%d",
+                        int(gap), observed, min_tokens, int(self.threshold_tokens))
+        else:
+            logger.info("LCM cold-gap compaction requested: gap=%ds observed_prompt_tokens=%d min=%d threshold=%d "
+                        "cause=%s requests=%d", int(gap), observed, min_tokens, int(self.threshold_tokens), cause,
+                        requests)
         return True
+
+    def _cold_cache_causes(self) -> frozenset:
+        return frozenset(str(getattr(self._config, "cold_cache_causes", "") or "").split(","))
+
+    def _cold_cache_cause(self, telemetry: Dict[str, Any], last_call_at: float, gap: float,
+                          gap_setting: int) -> Optional[str]:
+        """Why the next provider call will find a cold cache: ``idle`` (the gap reached the setting; unchanged),
+        ``model_change`` (the model or provider the next call uses differs from the last call's) or
+        ``prompt_change`` (the system prompt select_context observed hashes differently from the last call's).
+        A compaction committed after the last call suppresses the last two: the call after it is cold anyway and
+        compaction already ran. None when no enabled cause applies."""
+        causes = self._cold_cache_causes()
+        if "idle" in causes and gap >= gap_setting:
+            return "idle"
+        if not causes & {"model", "prompt"} or self._compaction_committed_since(telemetry, last_call_at):
+            return None
+        if "model" in causes:
+            for current, recorded in ((self.model, telemetry.get("model")), (self.provider, telemetry.get("provider"))):
+                if current and isinstance(recorded, str) and recorded and str(current) != recorded:
+                    return "model_change"
+        if "prompt" in causes:
+            recorded = telemetry.get("last_system_prompt_sha")
+            pending = self._pending_system_prompt_sha_for_conversation()
+            if isinstance(recorded, str) and recorded and pending and pending != recorded:
+                return "prompt_change"
+        return None
+
+    def _compaction_committed_since(self, telemetry: Dict[str, Any], last_call_at: float) -> bool:
+        """True when a compaction committed after the provider call ``telemetry`` records: a durable leaf
+        compaction stamped at or after it, or compactions this process counted that the record has not seen."""
+        stamped = telemetry.get("last_leaf_compaction_at")
+        if isinstance(stamped, (int, float)) and not isinstance(stamped, bool) and stamped >= last_call_at:
+            return True
+        try:
+            return self._compaction_telemetry_counter_delta(telemetry)[2] > 0
+        except Exception:
+            logger.debug("LCM cold-cache compaction counter check failed", exc_info=True)
+            return False
+
+    def _cold_cache_request_live(self, event: Dict[str, Any]) -> bool:
+        """A requested cold pass this process still owns: the in-flight request, younger than the hard budget."""
+        inflight = getattr(self, "_cold_cache_inflight", None)
+        if not inflight or inflight[2] != event.get("owner"):
+            return False
+        return time.monotonic() - inflight[3] < self._foreground_budget_seconds()[1]
 
     @staticmethod
     def _cold_gap_metadata_key(conversation_id: str) -> str:
         return f"cold_gap_compaction:{conversation_id}"
 
-    def _record_cold_gap_result(self, budget: ForegroundBudget, messages: List[Dict[str, Any]], result: Any,
-                                started: float) -> None:
-        """Fill the requested cold-gap event with this pass's outcome (best effort, diagnostic only)."""
+    def _update_cold_gap_event(self, **fields: Any) -> Optional[Dict[str, Any]]:
+        """Merge ``fields`` into this conversation's cold-gap event (best effort); returns the updated event."""
         try:
             conversation_id = self._conversation_id
+            if not conversation_id:
+                return None
             key = self._cold_gap_metadata_key(conversation_id)
             record = self._store.read_metadata_json(key)
-            if not conversation_id or not isinstance(record, dict) or not isinstance(record.get("last_event"), dict):
-                return
+            if not isinstance(record, dict) or not isinstance(record.get("last_event"), dict):
+                return None
+            record["last_event"].update(fields)
+            self._store.write_metadata_json([key], json.dumps(record, sort_keys=True))
+            return record["last_event"]
+        except Exception:
+            logger.debug("LCM cold-gap event update failed", exc_info=True)
+            return None
+
+    @staticmethod
+    def _cold_pass_freed_nothing(messages: List[Dict[str, Any]], result: Any) -> bool:
+        """The host's no-progress rule: the same number of rows (or more) and less than 5% fewer tokens."""
+        if not isinstance(result, list):
+            return True
+        return len(result) >= len(messages) and count_messages_tokens(result) > (
+            count_messages_tokens(messages) * _COLD_CACHE_PROGRESS_TOKEN_SHARE)
+
+    def _prepare_cold_threshold_retry(self) -> None:
+        """Reset the per-pass state compress() resets on entry (not the foreground budget, whose clock and leaf
+        count cover both attempts, nor pending emissions a first-attempt leaf may own) and arm the retry."""
+        self._uid_source_bindings = {}
+        self._uid_sparse_coverage = False
+        self._uid_coverage_audit = {}
+        self._last_hidden_backlog = None
+        self._compress_escaped = []
+        self._last_compression_noop_reason = ""
+        _summary_call.error = None
+        self._survival_fit_emission = None
+        self._compress_occurrences = None
+        self._survival_fit_reason = None
+        self._no_progress_candidate = False
+        self._no_progress_proof_complete = False
+        self._stub_first_exit_now = self._last_stub_first_exit = None
+        self._compress_calls += 1
+        self._compaction_request.cold_gap = True
+        self._cold_threshold_retry = True
+
+    def _cold_pass_stop_reason(self) -> str:
+        sweep = getattr(self, "_last_threshold_full_sweep", None) or {}
+        return (str(self._last_compression_noop_reason or "") or str(sweep.get("stop_reason") or "")
+                or str(self._last_compression_status or "unknown"))
+
+    def _record_cold_gap_result(self, budget: ForegroundBudget, messages: List[Dict[str, Any]], result: Any,
+                                started: float, attempts: int = 1, no_progress: bool = False) -> None:
+        """Fill the requested cold-gap event with this pass's outcome (best effort, diagnostic only). A pass that
+        raised leaves ``outcome=error`` (the event stays open for one more request)."""
+        try:
             sweep = self._last_threshold_full_sweep if budget.sweep_active else {}
             after = result if isinstance(result, list) else messages
-            record["last_event"].update(
+            if result is None or self._last_compression_status == "error":
+                outcome = "error"
+            elif no_progress or self._cold_pass_freed_nothing(messages, after):
+                outcome = "no_progress"
+            else:
+                outcome = "shrunk"
+            self._update_cold_gap_event(
                 leaf_passes=int(sweep.get("leaf_passes", budget.leaves) if sweep else budget.leaves),
                 tokens_before=sweep.get("tokens_before") if sweep else count_messages_tokens(messages),
-                tokens_after=sweep.get("tokens_after") if sweep else count_messages_tokens(after),
+                tokens_after=count_messages_tokens(after),  # the list the host gets, not the sweep's estimate
                 duration_ms=round((time.perf_counter() - started) * 1000.0, 3),
                 stop_reason=("error" if self._last_compression_status == "error" else
                              str(sweep.get("stop_reason") or "") if sweep else "")
                 or str(self._last_compression_status or "unknown"),
+                attempts=int(attempts), outcome=outcome,
             )
-            self._store.write_metadata_json([key], json.dumps(record, sort_keys=True))
         except Exception:
             logger.debug("LCM cold-gap event update failed", exc_info=True)
 
@@ -567,7 +703,8 @@ class CompactionMixin:
         except Exception:
             logger.debug("LCM cold-gap status read failed", exc_info=True)
         return {"seconds": int(self._config.cold_gap_compaction_seconds),
-                "min_prompt_tokens": int(self._config.cold_gap_min_prompt_tokens), "last_event": event}
+                "min_prompt_tokens": int(self._config.cold_gap_min_prompt_tokens),
+                "causes": str(getattr(self._config, "cold_cache_causes", "")), "last_event": event}
 
     def _mark_below_threshold_maintenance(self, **kwargs: Any) -> bool:
         """#651: a request below the host threshold is maintenance; the automatic compress() it asks for is
@@ -822,6 +959,7 @@ class CompactionMixin:
             thread_context.foreground_budget = budget
         returned = None
         cold_gap_pass = False
+        cold_attempts, cold_no_progress = 1, False
         try:
             budget.pre_leaf = PhaseSqlTrace()  # #1127: timed until the first leaf call, or the stop before one
             budget.pre_leaf.install([(self._store, "_conn"), (self._store, "_write_lock"), (self._dag, "_conn"),
@@ -840,6 +978,9 @@ class CompactionMixin:
                 current_tokens if current_tokens is not None else count_messages_tokens(messages)
             ) < self.threshold_tokens)
             self._compaction_request.cold_gap = cold_gap_pass
+            self._cold_pass_active = cold_gap_pass  # fork: a cold pass arms no sweep budget hold either
+            if cold_gap_pass:  # lina#455: the event stays open until this pass ends with a result
+                self._update_cold_gap_event(pass_started=True, attempts=1)
             if bypass_cooldown:  # #651: a host recovery attempt is never cleanup-only maintenance
                 self._compaction_request.below_threshold_cleanup_only = self._compaction_request.automatic_request = False
                 # #684: nor held by a boundary cooldown.
@@ -863,6 +1004,34 @@ class CompactionMixin:
                     force=force,
                     recovery_attempt=bypass_cooldown,
                 )
+                if (cold_gap_pass and self._last_compression_status != "error"
+                        and self._cold_pass_freed_nothing(messages, result)):
+                    # lina#455: a cold pass that freed nothing is retried ONCE through the over-threshold branches
+                    # (the #651 candidate, so the #671 stub-first free cuts, then the same sweep and leaf loop),
+                    # never through a fit that drops rows. Still no hold; at most two attempts.
+                    first_stop = self._cold_pass_stop_reason()
+                    logger.info("LCM cold-cache compaction freed nothing; retrying through the threshold path: "
+                                "stop=%s rows=%d", first_stop, len(messages))
+                    self._prepare_cold_threshold_retry()
+                    cold_attempts = 2
+                    self._update_cold_gap_event(attempts=2)
+                    result = self._compress_impl(
+                        messages,
+                        current_tokens=current_tokens,
+                        focus_topic=focus_topic,
+                        force=force,
+                        recovery_attempt=bypass_cooldown,
+                    )
+                    if self._last_compression_status != "error" and self._cold_pass_freed_nothing(messages, result):
+                        cold_no_progress = True
+                        inflight = getattr(self, "_cold_cache_inflight", None) or ()
+                        logger.warning(
+                            "LCM cold-cache compaction freed nothing: cause=%s attempts=2 stop=%s first_stop=%s "
+                            "rows=%d tokens=%d conversation=%s", inflight[4] if len(inflight) > 4 else "unknown",
+                            self._cold_pass_stop_reason(), first_stop, len(messages),
+                            count_messages_tokens(messages), self._conversation_id)
+                        result = messages  # the host sends what it had; nothing was dropped to look smaller
+                        self._ingest_cursor = len(messages)
             self._compress_occurrences = None
             if (
                 isinstance(result, list)
@@ -947,7 +1116,10 @@ class CompactionMixin:
             raise
         finally:
             if cold_gap_pass:
-                self._record_cold_gap_result(budget, messages, returned, budget_started)
+                self._record_cold_gap_result(budget, messages, returned, budget_started, cold_attempts,
+                                             cold_no_progress)
+                self._cold_cache_inflight = None
+            self._cold_pass_active = self._cold_threshold_retry = False
             self._end_pre_leaf_phase(budget, "stopped")
             self._last_compress_leaves = (self._hold_conversation_key(), budget.leaves)
             self._compress_forced_overflow = False
@@ -1762,6 +1934,7 @@ class CompactionMixin:
         anchor_source_messages: List[Dict[str, Any]],
         pressure_messages: List[Dict[str, Any]],
         observed_tokens: int,
+        max_target: Optional[int] = None,
     ) -> Optional[List[Dict[str, Any]]]:
         """#671: the list the leaf path returns when no leaf runs (summary prefix, externalized placeholders, the
         aged stub tier), assembled without a model call, when the survival fit's host measure puts it at or under
@@ -1776,6 +1949,8 @@ class CompactionMixin:
         ratio = getattr(self._config, "stub_first_exit_target_ratio", 0.0)
         if 0 < ratio <= 1:  # 0 (unset) keeps the built-in target; a ratio only ever lowers it
             target = min(target, int(threshold * ratio))
+        if max_target is not None:  # fork lina#455: the cold retry exits only when the cut frees what the host counts
+            target = min(target, int(max_target))
         if target <= 0:
             return None
         leading = self._leading_anchor_count(working_messages)
@@ -1973,6 +2148,8 @@ class CompactionMixin:
         state.hold_fit_only_requested = bool(self._compaction_request.hold_fit_only_requested)
         state.cold_gap_requested = bool(self._compaction_request.cold_gap and not force)
         self._compaction_request.cold_gap = False
+        state.cold_threshold_retry = bool(state.cold_gap_requested and getattr(self, "_cold_threshold_retry", False))
+        self._cold_threshold_retry = False
         self._compaction_request.cleanup_only_due_to_boundary_cooldown = False
         self._compaction_request.below_threshold_cleanup_only = False
         self._compaction_request.automatic_request = False
@@ -2171,7 +2348,8 @@ class CompactionMixin:
             not force
             and not state.force_overflow
             and self.threshold_tokens > 0
-            and state.observed_prompt_tokens >= self.threshold_tokens
+            # Fork lina#455: the cold retry enters the over-threshold branches (compress() arms no hold for it).
+            and (state.observed_prompt_tokens >= self.threshold_tokens or state.cold_threshold_retry)
         )
         state.anchor_source_messages = list(state.working_messages)
         state.pressure_messages = messages if len(messages) == len(state.working_messages) else state.working_messages
@@ -2222,9 +2400,11 @@ class CompactionMixin:
         # #671: an automatic threshold pass (the #651 candidate; never a recovery attempt) first tries the free
         # cuts: no leaf, no condensation, no model call when they reach the target.
         if self._no_progress_candidate and not recovery_attempt:
-            exited = self._stub_first_exit(
-                messages, state.working_messages, state.anchor_source_messages, state.pressure_messages, state.observed_prompt_tokens
-            )
+            stub_args = (messages, state.working_messages, state.anchor_source_messages, state.pressure_messages,
+                         state.observed_prompt_tokens)
+            exited = (self._stub_first_exit(*stub_args, max_target=int(
+                (state.observed_prompt_tokens or 0) * _COLD_CACHE_PROGRESS_TOKEN_SHARE))  # fork lina#455 cold retry
+                if state.cold_threshold_retry else self._stub_first_exit(*stub_args))
             if exited is not None:
                 if state.threshold_full_sweep_active:
                     self._last_threshold_full_sweep.update(
@@ -3264,6 +3444,8 @@ class CompactionMixin:
         candidate_raw = self._uid_leaf_candidates(
             candidate_raw, state.working_messages[leaf.leading_anchor_count:],
             self._compress_run.store_ids_by_message_id or {})
+        if state.valve_skipped:  # fork leaf valve: chunks no row of which can become leaf input are not reselected
+            candidate_raw = [message for message in candidate_raw if id(message) not in state.valve_skipped]
         # #922: when assembly can repeat the current objective verbatim, a leaf
         # containing only that prompt cannot reduce the active context.
         # Keep filtering/publication and assistant-tail bookkeeping on their existing paths.
@@ -3305,6 +3487,12 @@ class CompactionMixin:
                 return "continue", None
             state.noop_reason = ("no paired uncovered source rows" if self._uid_coverage_status().get("unpaired_count", 0)
                                  else "no eligible raw backlog outside fresh tail")
+            if state.valve_skips and not state.leaf_compacted_this_turn:
+                # Fork leaf valve: everything left was skipped as unusable. That is no progress, not a drained prefix.
+                state.noop_reason = state.valve_reason or state.noop_reason
+                if state.threshold_full_sweep_active:
+                    state.sweep_raw_drained, state.sweep_stop_reason = False, "no_usable_leaf_input"
+                return "break", None
             if state.threshold_full_sweep_active:
                 state.sweep_raw_drained = True
                 state.sweep_stop_reason = "raw_prefix_drained"
@@ -3394,6 +3582,31 @@ class CompactionMixin:
         return "next", None
 
 
+    def _leaf_valve_skip(self, state: _CompressionState, leaf: _LeafState, reason: str) -> bool:
+        """Fork leaf valve (lina#455, under the #d8a937e3 scaffold exclusion): the oldest chunk gives the leaf
+        builder nothing (every row would be dropped), so leave it unselected and let the selection take the next
+        chunk of the raw backlog, at most ``_LEAF_VALVE_MAX_SKIPS`` times per pass. No row is deleted or changed:
+        a skipped row stays stored and stays in the host view. Success is still the shrink the pass measures. Only the
+        empty-leaf-input stop takes the valve; a chunk without stored lineage keeps its #1147 refusal."""
+        rows = list(leaf.selected_raw_chunk or ())
+        # Only a view that carries host uids (the d8a937e3 scope): a uid-less view keeps today's stop, so the #1141
+        # refusal before a paid call and the #1162 empty-input stop are unchanged there.
+        if not any(isinstance(m.get("message_uid"), str) and m["message_uid"] for m in state.working_messages):
+            return False
+        if (not rows or leaf.hidden_backlog or leaf.prepared is not None or state.force_overflow
+                or state.valve_skips >= _LEAF_VALVE_MAX_SKIPS or all(id(m) in state.valve_skipped for m in rows)):
+            return False
+        state.valve_skips += 1
+        state.valve_skipped.update(id(message) for message in rows)
+        state.valve_reason = state.valve_reason or reason
+        leaf_map = self._compress_run.store_ids_by_message_id or {}
+        logger.warning(
+            "LCM leaf valve skipped an unusable oldest chunk: reason=%s rows=%d store_ids=%s lengths=%s skip=%d/%d",
+            reason, len(rows), json.dumps([leaf_map.get(id(m), m.get("store_id")) for m in rows]),
+            json.dumps([len(text_content_for_pattern_matching(m.get("content")) or "") for m in rows]),
+            state.valve_skips, _LEAF_VALVE_MAX_SKIPS)
+        return True
+
     def _prepare_leaf_input(
         self, state: _CompressionState, leaf: _LeafState,
         dependent_reply_message_ids: set[int], sweep_step_done: Callable[[str, float], float],
@@ -3417,6 +3630,8 @@ class CompactionMixin:
             return "break", None
         if leaf.anchored_input == []:
             blocked = self._store_complete_blocked
+            if not blocked and self._leaf_valve_skip(state, leaf, self._store_complete_empty_reason or "leaf input is empty"):
+                return "continue", None
             state.noop_reason = (_RETAINED_NOOP_REASON + " (store_id=%d role=%s kind=%s)" % blocked[:3]
                                  if blocked else self._store_complete_empty_reason or "leaf input is empty")
             return "break", None

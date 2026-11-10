@@ -1,6 +1,23 @@
 """One-shot preflight instructions consumed by the next foreground compaction."""
 
+import hashlib
+import json
 from dataclasses import dataclass
+from typing import Any, Optional
+
+
+def system_prompt_sha(messages: Any) -> Optional[str]:
+    """Fork cold cache (lina#455): sha256 of the canonical JSON of the leading system message(s)' content (a
+    string or a list of blocks), or None when the request starts with no system message. Reads only those rows."""
+    contents = []
+    for message in messages or ():
+        if not isinstance(message, dict) or message.get("role") != "system":
+            break
+        contents.append(message.get("content"))
+    if not contents:
+        return None
+    canonical = json.dumps(contents, sort_keys=True, ensure_ascii=False, separators=(",", ":"), default=str)
+    return hashlib.sha256(canonical.encode("utf-8", "surrogatepass")).hexdigest()
 
 
 @dataclass

@@ -467,7 +467,7 @@ _SUPPORTED_LCM_CONFIG_YAML_KEYS = {
     "expansion_reasoning_effort",
     "embedding_query_prefix", "embedding_document_prefix",
     "threshold_full_sweep_max_passes",
-    "cold_gap_compaction_seconds", "cold_gap_min_prompt_tokens",
+    "cold_gap_compaction_seconds", "cold_gap_min_prompt_tokens", "cold_cache_causes",
 }
 
 
@@ -661,6 +661,44 @@ def _cold_gap_setting_with_source(name: str, default: int) -> tuple[int, str, st
         parsed, warning = checked(raw_env, f"env {key}")
         if parsed is not None:
             value, source = parsed, f"env:{key}"
+        warnings.append(warning)
+    return value, source, "; ".join(w for w in warnings if w) or None
+
+
+COLD_CACHE_CAUSES = ("idle", "model", "prompt")
+
+
+def _cold_cache_causes_with_source(default: str) -> tuple[str, str, str | None]:
+    """Env ``LCM_COLD_CACHE_CAUSES``, then ``lcm.cold_cache_causes``, then ``default``: a comma list of
+    ``idle``, ``model``, ``prompt`` (canonical order, deduplicated). Unknown names are ignored with a warning; a
+    value that leaves no known name (empty, junk) is ignored with a warning and the next source applies."""
+
+    def checked(raw: Any, label: str) -> tuple[str | None, str | None]:
+        if isinstance(raw, (list, tuple)):
+            names = [str(item).strip().lower() for item in raw]
+        else:
+            names = [item.strip().lower() for item in str(raw).split(",")]
+        names = [name for name in names if name]
+        unknown = [name for name in names if name not in COLD_CACHE_CAUSES]
+        known = [name for name in COLD_CACHE_CAUSES if name in names]
+        if not known:
+            return None, f"invalid {label}={repr(raw)[:40]} ignored (must name one or more of idle, model, prompt)"
+        warning = (f"unknown {label} names ignored: {','.join(unknown)[:40]}" if unknown else None)
+        return ",".join(known), warning
+
+    value, source, warnings = default, "default", []
+    lcm_section = _load_hermes_config_yaml().get("lcm")
+    raw_yaml = lcm_section.get("cold_cache_causes") if isinstance(lcm_section, dict) else None
+    if raw_yaml is not None:
+        parsed, warning = checked(raw_yaml, "lcm.cold_cache_causes")
+        if parsed is not None:
+            value, source = parsed, "config_yaml:lcm.cold_cache_causes"
+        warnings.append(warning)
+    raw_env = lcm_env_get("LCM_COLD_CACHE_CAUSES")
+    if raw_env is not None:
+        parsed, warning = checked(raw_env, "env LCM_COLD_CACHE_CAUSES")
+        if parsed is not None:
+            value, source = parsed, "env:LCM_COLD_CACHE_CAUSES"
         warnings.append(warning)
     return value, source, "; ".join(w for w in warnings if w) or None
 
@@ -910,6 +948,7 @@ ENV_FIELD_SPECS: tuple[_EnvFieldSpec, ...] = (
     _EnvFieldSpec("threshold_full_sweep_max_passes", "LCM_THRESHOLD_FULL_SWEEP_MAX_PASSES", int),
     _EnvFieldSpec("cold_gap_compaction_seconds", "LCM_COLD_GAP_COMPACTION_SECONDS", int),
     _EnvFieldSpec("cold_gap_min_prompt_tokens", "LCM_COLD_GAP_MIN_PROMPT_TOKENS", int),
+    _EnvFieldSpec("cold_cache_causes", "LCM_COLD_CACHE_CAUSES", str),
     _EnvFieldSpec("summary_prefix_target_tokens", "LCM_SUMMARY_PREFIX_TARGET_TOKENS", int),
     _EnvFieldSpec("preserved_objective_max_chars", "LCM_PRESERVED_OBJECTIVE_MAX_CHARS", int),
     _EnvFieldSpec("foreground_soft_seconds", "LCM_FOREGROUND_SOFT_SECONDS", float),
@@ -1056,6 +1095,7 @@ _SOURCE_TRACKED_ENV_FIELDS = frozenset({
     "threshold_full_sweep_max_passes",
     "cold_gap_compaction_seconds",
     "cold_gap_min_prompt_tokens",
+    "cold_cache_causes",
 })
 
 # Fields exposed as runtime preset overrides (consumed by presets.py).
@@ -1139,6 +1179,9 @@ class LCMConfig:
     cold_gap_compaction_seconds: int = 0
     # Provider-reported prompt tokens of the last call a cold-gap compaction needs; 1-10000000.
     cold_gap_min_prompt_tokens: int = 300_000
+    # Causes of a cold provider cache that ask for the cold pass (while cold_gap_compaction_seconds > 0): idle gap,
+    # model/provider change, system prompt change. Env LCM_COLD_CACHE_CAUSES, then lcm.cold_cache_causes.
+    cold_cache_causes: str = "idle,model,prompt"
     # Target frontier-summary size after a sweep (0 = one leaf budget, capped at a quarter of the compaction threshold).
     summary_prefix_target_tokens: int = 0
     # Characters of the user's own words carried in the preserved-objective scaffold after compaction;
@@ -1695,6 +1738,8 @@ class LCMConfig:
             value, source, warning = _cold_gap_setting_with_source(name, getattr(c, name))
             setattr(c, name, value)
             _record(name, source, warning)
+        c.cold_cache_causes, source, warning = _cold_cache_causes_with_source(c.cold_cache_causes)
+        _record("cold_cache_causes", source, warning)
 
         # Every other scalar LCM_* override is applied uniformly from the spec.
         for spec in ENV_FIELD_SPECS:

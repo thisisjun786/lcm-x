@@ -153,7 +153,7 @@ from .reconcile import _hermes_salvage_protected_positions
 from .reconcile import _commit_proof_identity_digest, _has_lossy_redacted_identity, _merge_append_cut, _proof_user_identity
 from .compaction import CompactionMixin
 from . import leaf_prep
-from .compaction_request import CompactionRequest
+from .compaction_request import CompactionRequest, system_prompt_sha
 from .compress_run import CompressRun
 from .identity_anchor import IdentityAnchorMixin, _raw_remainder, identity_anchor_enabled
 from .host_uid import HostUidShadowMixin, _valid_uid
@@ -2210,6 +2210,29 @@ class LCMEngine(
         self.last_reasoning_tokens = int(usage.get("reasoning_tokens", 0) or 0)
         self._record_turn_compaction_telemetry()
 
+    def select_context(self, request_messages, conversation_messages=None, incoming_message=None,
+                       budget_tokens=None, **kwargs):
+        """Fork cold cache (lina#455): observe the system prompt of the request about to be sent (its hash only)
+        for the ``prompt_change`` cause. Always returns None (the request is unchanged), never raises, never
+        mutates its inputs, and does nothing for bypassed, stateless or auxiliary sessions."""
+        del conversation_messages, incoming_message, budget_tokens, kwargs
+        try:
+            if self._bypasses_lcm_context_management() or not self._conversation_id:
+                return None
+            sha = system_prompt_sha(request_messages)
+            if sha is not None:
+                self._pending_system_prompt_sha = (str(self._conversation_id), sha)
+        except Exception:
+            logger.debug("LCM select_context system prompt observation failed", exc_info=True)
+        return None
+
+    def _pending_system_prompt_sha_for_conversation(self) -> Optional[str]:
+        """The system prompt hash select_context observed for the current conversation, else None."""
+        pending = getattr(self, "_pending_system_prompt_sha", None)
+        if isinstance(pending, tuple) and len(pending) == 2 and pending[0] == str(self._conversation_id or ""):
+            return pending[1]
+        return None
+
     @property
     def cache_read_ratio(self) -> float:
         if self.last_prompt_tokens <= 0:
@@ -2367,6 +2390,9 @@ class LCMEngine(
                 "provider": self.provider or existing.get("provider"),
                 "model": self.model or existing.get("model"),
                 "last_api_call_at": time.time(),
+                # Fork cold cache (lina#455): the system prompt this call was sent with (select_context's hash).
+                "last_system_prompt_sha": (self._pending_system_prompt_sha_for_conversation()
+                                           or existing.get("last_system_prompt_sha")),
                 "last_leaf_compaction_at": last_leaf_compaction_at,
                 "last_compaction_duration_ms": last_compaction_duration_ms,
                 "total_compactions": total_compactions,
@@ -2402,6 +2428,10 @@ class LCMEngine(
         return False
 
     def _start_sweep_budget_hold(self, seconds: Optional[float] = None, *, turn_paced: bool = False) -> None:
+        if getattr(self, "_cold_pass_active", False):
+            # Fork lina#455: a cold-cache pass (either attempt) arms no hold; the next ordinary pass decides.
+            logger.info("LCM cold-cache pass armed no sweep budget hold")
+            return
         hold = _SWEEP_BUDGET_HOLD_SECONDS if seconds is None else min(_SWEEP_BUDGET_HOLD_SECONDS, max(1.0, seconds))
         self._sweep_budget_hold_until = time.monotonic() + hold
         self._sweep_budget_hold_conversation = self._hold_conversation_key()  # #618
