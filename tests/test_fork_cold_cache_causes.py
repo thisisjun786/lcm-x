@@ -643,6 +643,183 @@ def test_idle_only_keeps_todays_triggers(engines, clock):
     assert _event(engine)["cause"] == "idle"
 
 
+# -- 11. the deployment threshold (context_threshold 0.5) next to 0.7 -------------------------------------------------
+
+
+WINDOW = 1_000_000
+BAND_SHARE = 0.97  # host tokens just under the threshold, inside the cold band [floor, threshold)
+
+
+@pytest.fixture
+def deployed(tmp_path, monkeypatch):
+    """The engine as a deployment builds it: ``context_threshold`` in its config and ``threshold_tokens`` from
+    ``update_model`` on a 1M window (never assigned afterwards)."""
+    built = []
+
+    def build(threshold, name="d", **overrides):
+        settings = dict(fresh_tail_count=2, leaf_chunk_tokens=100, threshold_full_sweep_enabled=True,
+                        cold_gap_compaction_seconds=GAP, context_threshold=threshold,
+                        database_path=str(tmp_path / name / "lcm.db"))
+        settings.update(overrides)
+        engine = LCMEngine(config=LCMConfig(**settings), hermes_home=str(tmp_path / name / "hermes_home"))
+        built.append(engine)
+        engine.on_session_start(CONVERSATION)
+        engine.update_model("model-a", WINDOW, provider="provider-a", api_mode="responses")
+        assert engine.threshold_tokens == int(WINDOW * threshold)
+
+        def fake_leaf(chunk, focus_topic=None, deadline=None):
+            del focus_topic, deadline
+            return chunk, count_messages_tokens(chunk), "bounded", 1, 0
+
+        monkeypatch.setattr(engine, "_summarize_leaf_chunk_with_rescue", fake_leaf)
+        return engine
+
+    yield build
+    for engine in built:
+        engine.shutdown()
+
+
+def _make_cold(engine, clock, cause, prompt_tokens):
+    """The last provider call (``prompt_tokens``, sent with prompt A), then what makes the next call cold."""
+    assert engine.select_context(_with_prompt(SYSTEM_A, _messages())) is None
+    _provider_call(engine, clock, T0, prompt_tokens=prompt_tokens)
+    clock.now = T0 + (GAP if cause in ("idle", "all") else 5)
+    if cause in ("model_change", "all"):
+        engine.update_model("model-b", WINDOW, provider="provider-a", api_mode="responses")
+    if cause in ("prompt_change", "all"):
+        assert engine.select_context(_with_prompt(SYSTEM_B, _messages())) is None
+
+
+def _band_tool_conversation(tokens: int) -> list[dict]:
+    """About ``tokens`` of aged-stub sized tool outputs (above the 2k aged tier, below the 10k first-sight tier)."""
+    messages = [{"role": "system", "content": "system"}]
+    payload = 8_000
+    for turn in range(tokens // (payload + 80)):
+        messages.append({"role": "user", "content": f"ask {turn} " + "word " * 20})
+        messages += tool_pair(f"call-{turn}", payload_of(payload, word=f"w{turn % 10}"))
+        messages.append({"role": "assistant", "content": f"reply {turn} " + "word " * 20})
+    return messages
+
+
+@pytest.mark.parametrize("threshold", [0.7, 0.5])
+@pytest.mark.parametrize("cause", ["idle", "model_change", "prompt_change"])
+def test_each_cause_requests_the_cold_pass_just_under_the_threshold(deployed, clock, caplog, threshold, cause):
+    engine = deployed(threshold)
+    host = int(engine.threshold_tokens * BAND_SHARE)
+    assert engine._config.cold_gap_min_prompt_tokens <= host < engine.threshold_tokens
+    _make_cold(engine, clock, cause, host)
+    assert engine.threshold_tokens == int(WINDOW * threshold)  # a model switch recomputes the same threshold
+    with caplog.at_level(logging.INFO):
+        assert engine.should_compress(host) is True
+    assert engine._compaction_request.cold_gap is True
+    lines = _requested_lines(caplog)
+    assert len(lines) == 1 and f"threshold={engine.threshold_tokens}" in lines[0], lines
+    assert _event(engine)["cause"] == cause and _event(engine)["observed_prompt_tokens"] == host
+
+
+@pytest.mark.parametrize("threshold", [0.7, 0.5])
+def test_at_the_deployed_threshold_the_ordinary_path_runs(deployed, clock, threshold):
+    engine = deployed(threshold)
+    _make_cold(engine, clock, "all", engine.threshold_tokens)
+    assert engine.should_compress(engine.threshold_tokens) is True
+    assert engine._compaction_request.cold_gap is False and _record(engine) == {}
+
+
+@pytest.mark.parametrize("threshold", [0.7, 0.5])
+def test_below_the_floor_no_cause_ever_asks(deployed, clock, threshold):
+    engine = deployed(threshold)
+    below = engine._config.cold_gap_min_prompt_tokens - 1
+    _make_cold(engine, clock, "all", below)  # idle, model and prompt all changed
+    assert engine.should_compress(below) is False
+    assert engine.should_compress_preflight(_messages()) is False
+    assert engine._compaction_request.cold_gap is False and _record(engine) == {}
+
+
+@pytest.mark.parametrize("threshold", [0.7, 0.5])
+@pytest.mark.parametrize("ratio", [0.0, 0.2])
+def test_a_band_pass_that_frees_nothing_is_retried_through_the_free_cuts(deployed, clock, monkeypatch, threshold,
+                                                                        ratio):
+    engine = deployed(threshold, leaf_chunk_tokens=1_000, stub_first_exit_target_ratio=ratio)
+    messages = _band_tool_conversation(int(engine.threshold_tokens * BAND_SHARE))
+    host = count_messages_tokens(messages)
+    assert 0.95 * engine.threshold_tokens <= host < engine.threshold_tokens
+    calls = _out_of_time(engine, monkeypatch)
+    _make_cold(engine, clock, "idle", host)
+    assert engine.should_compress_preflight(messages) is True  # the turn-start gate ingests the host rows
+    stored_before = _store_digest(engine)
+    result = engine.compress(messages, current_tokens=host)
+    assert calls  # the first attempt tried a leaf and ran out of time
+    event = _event(engine)
+    assert (event["attempts"], event["outcome"], event["stop_reason"]) == (2, "shrunk", "stub_first_exit"), event
+    # The free-cut target: min(threshold - leaf chunk, 0.95 x threshold, ratio x threshold, 0.95 x host).
+    target = min(engine.threshold_tokens - 1_000, int(0.95 * engine.threshold_tokens), int(0.95 * host))
+    if ratio:
+        target = min(target, int(ratio * engine.threshold_tokens))
+    assert count_messages_tokens(result) <= target
+    assert [m["role"] for m in result] == [m["role"] for m in messages]  # stubs only, no row dropped
+    assert _store_digest(engine) == stored_before
+
+
+@pytest.mark.parametrize("threshold", [0.7, 0.5])
+def test_a_band_retry_past_the_free_cuts_runs_the_leaf_loop(deployed, clock, monkeypatch, threshold):
+    # Plain text rows: the free cuts cannot reach the 0.2 ratio target, so the retry goes on to the leaf loop.
+    engine = deployed(threshold, leaf_chunk_tokens=20_000, stub_first_exit_target_ratio=0.2)
+    messages = [{"role": "system", "content": "system"}]
+    for index in range(int(engine.threshold_tokens * BAND_SHARE) // 8_000):
+        messages.append({"role": "user" if index % 2 == 0 else "assistant",
+                         "content": f"band-{index} " + payload_of(8_000, word=f"t{index % 10}")})
+    host = count_messages_tokens(messages)
+    assert 0.95 * engine.threshold_tokens <= host < engine.threshold_tokens
+    retry, calls = [], []
+    prepare = engine._prepare_cold_threshold_retry
+
+    def armed():
+        retry.append(True)
+        prepare()
+
+    def leaf(chunk, focus_topic=None, deadline=None):
+        del focus_topic, deadline
+        calls.append(bool(retry))
+        if not retry:
+            raise SweepBudgetExhausted("time_budget_exhausted")
+        return chunk, count_messages_tokens(chunk), "bounded", 1, 0
+
+    monkeypatch.setattr(engine, "_prepare_cold_threshold_retry", armed)
+    monkeypatch.setattr(engine, "_summarize_leaf_chunk_with_rescue", leaf)
+    _make_cold(engine, clock, "idle", host)
+    assert engine.should_compress_preflight(messages) is True  # the turn-start gate ingests the host rows
+    stored_before = _store_digest(engine)
+    result = engine.compress(messages, current_tokens=host)
+    assert False in calls and True in calls  # a leaf in each attempt: the retry reached the leaf loop
+    event = _event(engine)
+    assert (event["attempts"], event["outcome"]) == (2, "shrunk") and event["stop_reason"] != "stub_first_exit"
+    assert count_messages_tokens(result) < 0.95 * host
+    assert _store_digest(engine) == stored_before
+    rows = {row["content"]: row["store_id"] for row in engine._store.get_session_messages(engine._session_id)}
+    covered = {sid for node in engine._dag.get_session_nodes(engine._session_id) for sid in node.source_ids}
+    kept = {m.get("content") for m in result}
+    removed = [m for m in messages[1:] if m["content"] not in kept]
+    assert removed and all(rows[m["content"]] in covered for m in removed)
+
+
+@pytest.mark.parametrize("threshold", [0.7, 0.5])
+def test_a_band_pass_where_both_attempts_free_nothing_keeps_the_list(deployed, clock, caplog, threshold):
+    engine = deployed(threshold)
+    messages = _messages(rows=2)  # every row is in the fresh tail
+    host = int(engine.threshold_tokens * BAND_SHARE)
+    _make_cold(engine, clock, "idle", host)
+    assert engine.should_compress_preflight(messages) is True  # the turn-start gate ingests the host rows
+    stored_before = _store_digest(engine)
+    with caplog.at_level(logging.INFO):
+        result = engine.compress(messages, current_tokens=host)
+    assert result == messages
+    warnings = [r for r in caplog.records if r.getMessage().startswith(FREED_NOTHING)]
+    assert len(warnings) == 1 and warnings[0].levelno == logging.WARNING
+    assert (_event(engine)["attempts"], _event(engine)["outcome"]) == (2, "no_progress")
+    assert _store_digest(engine) == stored_before
+    assert engine.should_compress(host) is False  # consumed: the host's next iteration sends, no loop
+
+
 def test_seconds_zero_turns_the_whole_family_off(engines, clock):
     engine = engines(cold_gap_compaction_seconds=0)
     _prompt_baseline(engine, clock)
