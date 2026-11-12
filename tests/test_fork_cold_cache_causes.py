@@ -1085,6 +1085,125 @@ def test_an_old_or_malformed_calibration_reads_empty(deployed, clock, raw):
     assert [entry[0] for entry in _calibration(engine)] == ["provider-a/model-b"]
 
 
+# -- 13. rows fell but the tokens did not: unpaired old rows the leaf loop must keep live ------------------------------
+
+
+STOP_LINE = "LCM compaction stop:"
+
+
+def _conv_event(engine) -> dict:
+    record = engine._store.read_metadata_json(engine._cold_gap_metadata_key(engine._conversation_id)) or {}
+    return record.get("last_event") or {}
+
+
+def _unpaired_backlog_case(tmp_path, monkeypatch, clock, caplog, old_turns):
+    """A host view of ``old_turns`` old turns whose rows have no stored, paired copy (``_uid_leaf_candidates`` keeps
+    unresolved occurrences live, so no leaf takes them) and 3 newer stored, uid-bound turns. The first attempt
+    folds the newer rows into one leaf, finds no candidate left, ends ``raw_prefix_drained``, and the post-drain
+    condensation's ``summary_prefix_target_reached`` becomes the sweep's stop reason."""
+    import itertools
+
+    from tests.test_fork_covered_head import _rows, _store
+    from tests.test_fork_late_copy_mapping import _home
+
+    monkeypatch.setattr(lcm_engine, "summarize_with_escalation", lambda **kw: ("Synthetic leaf summary.", 1))
+    engine = LCMEngine(config=LCMConfig(fresh_tail_count=4, leaf_chunk_tokens=3000, dynamic_leaf_chunk_max=3000,
+                                        threshold_full_sweep_enabled=True, cold_gap_compaction_seconds=GAP,
+                                        database_path=str(tmp_path / "lcm.db")), hermes_home=_home(tmp_path))
+    engine.on_session_start("S", platform="telegram", context_length=WINDOW, conversation_id="conv")  # _store's
+    engine.update_model("model-a", WINDOW, provider="provider-a", api_mode="responses")
+    _provider_call(engine, clock, T0)  # the last provider call, an idle gap before this turn
+    clock.now = T0 + GAP
+    stamps = itertools.count(1_700_000_000)
+    old, new = _rows("old", old_turns, stamps), _rows("new", 3, stamps)
+    _store(engine, new)
+    view = [{"role": "system", "content": "sys"}, *[dict(row) for row in old + new]]
+    engine._ingest_cursor = len(view)  # the host replays rows the store already took, no new ingest
+    tokens = count_messages_tokens(view)
+    engine.threshold_tokens = int(tokens / 0.97)
+    assert engine.should_compress(tokens) is True and engine._compaction_request.cold_gap is True
+    stored = len(engine._store.get_session_messages("S"))
+    with caplog.at_level(logging.INFO):
+        result = engine.compress(view, current_tokens=tokens)
+    stop = [r.getMessage() for r in caplog.records if r.getMessage().startswith(STOP_LINE)]
+    return engine, view, result, stop, stored
+
+
+def test_a_pass_that_drops_rows_but_frees_under_five_percent_is_retried_and_reported(tmp_path, monkeypatch,
+                                                                                    clock, caplog):
+    engine, view, result, stop, stored = _unpaired_backlog_case(tmp_path, monkeypatch, clock, caplog, 40)
+    try:
+        retry = [r for r in caplog.records if r.getMessage().startswith(
+            "LCM cold-cache compaction freed nothing; retrying through the threshold path")]
+        assert len(retry) == 1 and "stop=raw_prefix_drained" in retry[0].getMessage()
+        warnings = [r for r in caplog.records if r.getMessage().startswith(FREED_NOTHING)]
+        assert len(warnings) == 1 and warnings[0].levelno == logging.WARNING
+        event = _conv_event(engine)
+        assert (event["attempts"], event["outcome"]) == (2, "no_progress")
+        assert event["leaf_stop_reason"] == "raw_prefix_drained"
+        assert result == view  # the host's own rows (nothing to redact), never a 4%-smaller list counted as done
+        # One stop line per compress(): the retry's, whose sweep ran no post-drain condensation to relabel it.
+        assert len(stop) == 1 and "reason=raw_prefix_drained" in stop[0] and "unpaired_count=160" in stop[0]
+        assert len(engine._store.get_session_messages("S")) == stored  # nothing deleted
+    finally:
+        engine.shutdown()
+
+
+def test_the_same_shape_under_five_percent_also_on_the_first_attempt(tmp_path, monkeypatch, clock, caplog):
+    # The 11-11 shape in numbers: rows fall (a leaf took the newer rows) while the tokens fall by under 5%.
+    engine = None
+    original = LCMEngine._compress_impl
+    first = {}
+
+    def spy(self, messages, **kwargs):
+        out = original(self, messages, **kwargs)
+        first.setdefault("rows", (len(messages), len(out)))
+        first.setdefault("tokens", (count_messages_tokens(messages), count_messages_tokens(out)))
+        return out
+
+    monkeypatch.setattr(LCMEngine, "_compress_impl", spy)
+    engine, view, result, stop, stored = _unpaired_backlog_case(tmp_path, monkeypatch, clock, caplog, 40)
+    try:
+        rows_before, rows_after = first["rows"]
+        tokens_before, tokens_after = first["tokens"]
+        assert rows_after < rows_before and 0 < tokens_before - tokens_after < 0.05 * tokens_before
+    finally:
+        engine.shutdown()
+
+
+def test_a_pass_that_frees_five_percent_or_more_is_shrunk_without_a_retry(tmp_path, monkeypatch, clock, caplog):
+    engine, view, result, stop, stored = _unpaired_backlog_case(tmp_path, monkeypatch, clock, caplog, 5)
+    try:
+        assert not any("retrying through the threshold path" in r.getMessage() for r in caplog.records)
+        assert not any(r.getMessage().startswith(FREED_NOTHING) for r in caplog.records)
+        event = _conv_event(engine)
+        assert (event["attempts"], event["outcome"]) == (1, "shrunk")
+        assert event["leaf_stop_reason"] == "raw_prefix_drained"
+        assert event["stop_reason"] == "summary_prefix_target_reached"  # the post-drain condensation's result
+        assert len(stop) == 1 and "reason=summary_prefix_target_reached" in stop[0]
+        assert " leaf_stop=raw_prefix_drained" in stop[0]
+        assert count_messages_tokens(result) <= 0.95 * count_messages_tokens(view)
+    finally:
+        engine.shutdown()
+
+
+@pytest.mark.parametrize("host_share, expected", [(None, False), (1.0, False), (1.1, True)])
+def test_freed_nothing_is_judged_on_the_hosts_request_tokens(host_share, expected):
+    # Exactly 5% of the list freed is progress; the same cut is under 5% of a host request 10% larger.
+    messages = [{"role": "user", "content": "x" * 4_000}]
+    before = count_messages_tokens(messages)
+    result = [{"role": "user", "content": "x" * 4_000}]
+    while before - count_messages_tokens(result) < before * 0.05:
+        result[0]["content"] = result[0]["content"][:-4]
+    assert before - count_messages_tokens(result) <= before * 0.05 + 1
+    host = None if host_share is None else int(before * host_share)
+    freed = before - count_messages_tokens(result)
+    assert LCMEngine._cold_pass_freed_nothing(messages, result, host) is (
+        expected or max(before, host or 0) - freed > max(before, host or 0) * 0.95)
+    assert LCMEngine._cold_pass_freed_nothing(messages, result, host) is expected
+    assert LCMEngine._cold_pass_freed_nothing(messages, None, host) is True
+
+
 def test_seconds_zero_turns_the_whole_family_off(engines, clock):
     engine = engines(cold_gap_compaction_seconds=0)
     _prompt_baseline(engine, clock)

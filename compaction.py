@@ -133,6 +133,7 @@ class _CompressionState:
     noop_reason: str = ""
     sweep_stop_reason: str = ""
     sweep_raw_drained: bool = False
+    leaf_stop_reason: str = ""  # the leaf loop's stop when a post-drain condensation replaced sweep_stop_reason
     no_call_only: bool = False
     refused_input: Optional[tuple[List[Dict[str, Any]], List[Dict[str, Any]], bool]] = None
 
@@ -662,12 +663,18 @@ class CompactionMixin:
             return None
 
     @staticmethod
-    def _cold_pass_freed_nothing(messages: List[Dict[str, Any]], result: Any) -> bool:
-        """The host's no-progress rule: the same number of rows (or more) and less than 5% fewer tokens."""
+    def _cold_pass_freed_nothing(messages: List[Dict[str, Any]], result: Any,
+                                 host_tokens: Optional[int] = None) -> bool:
+        """A cold pass freed nothing when the tokens it took off the list are under 5% of what the host would send
+        (``host_tokens``, the host's count of the whole request, when it is larger than the list's own count).
+        Rows alone do not count: a cold call pays for every token sent, and a pass can fold a few rows into a
+        leaf while the old backlog it could not take stays raw (the host's own row-or-5% rule would call that
+        progress)."""
         if not isinstance(result, list):
             return True
-        return len(result) >= len(messages) and count_messages_tokens(result) > (
-            count_messages_tokens(messages) * _COLD_CACHE_PROGRESS_TOKEN_SHARE)
+        before = count_messages_tokens(messages)
+        base = max(before, int(host_tokens or 0))
+        return base - (before - count_messages_tokens(result)) > base * _COLD_CACHE_PROGRESS_TOKEN_SHARE
 
     def _prepare_cold_threshold_retry(self) -> None:
         """Reset the per-pass state compress() resets on entry (not the foreground budget, whose clock and leaf
@@ -691,11 +698,13 @@ class CompactionMixin:
 
     def _cold_pass_stop_reason(self) -> str:
         sweep = getattr(self, "_last_threshold_full_sweep", None) or {}
-        return (str(self._last_compression_noop_reason or "") or str(sweep.get("stop_reason") or "")
+        return (str(self._last_compression_noop_reason or "")
+                or str(sweep.get("leaf_stop_reason") or sweep.get("stop_reason") or "")
                 or str(self._last_compression_status or "unknown"))
 
     def _record_cold_gap_result(self, budget: ForegroundBudget, messages: List[Dict[str, Any]], result: Any,
-                                started: float, attempts: int = 1, no_progress: bool = False) -> None:
+                                started: float, attempts: int = 1, no_progress: bool = False,
+                                host_tokens: Optional[int] = None) -> None:
         """Fill the requested cold-gap event with this pass's outcome (best effort, diagnostic only). A pass that
         raised leaves ``outcome=error`` (the event stays open for one more request)."""
         try:
@@ -703,7 +712,7 @@ class CompactionMixin:
             after = result if isinstance(result, list) else messages
             if result is None or self._last_compression_status == "error":
                 outcome = "error"
-            elif no_progress or self._cold_pass_freed_nothing(messages, after):
+            elif no_progress or self._cold_pass_freed_nothing(messages, after, host_tokens):
                 outcome = "no_progress"
             else:
                 outcome = "shrunk"
@@ -715,6 +724,8 @@ class CompactionMixin:
                 stop_reason=("error" if self._last_compression_status == "error" else
                              str(sweep.get("stop_reason") or "") if sweep else "")
                 or str(self._last_compression_status or "unknown"),
+                # Why the leaf loop stopped, which a post-drain condensation's result never overwrites.
+                leaf_stop_reason=str(sweep.get("leaf_stop_reason") or sweep.get("stop_reason") or "") if sweep else "",
                 attempts=int(attempts), outcome=outcome,
             )
         except Exception:
@@ -1033,7 +1044,7 @@ class CompactionMixin:
                     recovery_attempt=bypass_cooldown,
                 )
                 if (cold_gap_pass and self._last_compression_status != "error"
-                        and self._cold_pass_freed_nothing(messages, result)):
+                        and self._cold_pass_freed_nothing(messages, result, current_tokens)):
                     # lina#455: a cold pass that freed nothing is retried ONCE through the over-threshold branches
                     # (the #651 candidate, so the #671 stub-first free cuts, then the same sweep and leaf loop),
                     # never through a fit that drops rows. Still no hold; at most two attempts.
@@ -1050,7 +1061,8 @@ class CompactionMixin:
                         force=force,
                         recovery_attempt=bypass_cooldown,
                     )
-                    if self._last_compression_status != "error" and self._cold_pass_freed_nothing(messages, result):
+                    if (self._last_compression_status != "error"
+                            and self._cold_pass_freed_nothing(messages, result, current_tokens)):
                         cold_no_progress = True
                         inflight = getattr(self, "_cold_cache_inflight", None) or ()
                         logger.warning(
@@ -1148,7 +1160,7 @@ class CompactionMixin:
         finally:
             if cold_gap_pass:
                 self._record_cold_gap_result(budget, messages, returned, budget_started, cold_attempts,
-                                             cold_no_progress)
+                                             cold_no_progress, current_tokens)
                 self._cold_cache_inflight = None
             self._cold_pass_active = self._cold_threshold_retry = False
             self._end_pre_leaf_phase(budget, "stopped")
@@ -1281,7 +1293,12 @@ class CompactionMixin:
                         "finalize=%.1fs backlog_tokens=%d%s%s%s%s%s%s", reason, budget.leaves, budget.progress or "none", elapsed,
                         pre, calls, finalize,
                         self._raw_backlog_tokens(result) if isinstance(result, list) and not bypassed else 0,
-                        f" host={budget.host:.1f}s" if budget.host > 0 else "",
+                        # The leaf loop's own stop when a post-drain condensation's result is the reason (no new
+                        # template slot, so the stop line's format string is unchanged).
+                        (f" leaf_stop={self._last_threshold_full_sweep['leaf_stop_reason']}"
+                         if budget.sweep_active and reason != "error"
+                         and (self._last_threshold_full_sweep or {}).get("leaf_stop_reason") else "")
+                        + (f" host={budget.host:.1f}s" if budget.host > 0 else ""),
                         " tokens_before={tokens_before} tokens_after={tokens_after} target={target_tokens} "
                         "backlog_rows={backlog_rows}".format(**exited) if exited else "",
                         " blocked=store_id:%d,role:%s,kind:%s" % blocked[:3] if blocked else empty_input,  # #1162
@@ -3018,6 +3035,7 @@ class CompactionMixin:
                     state.post_drain_condensation_skipped = "pre_leaf_rejected"
                     state.sweep_stop_reason = "summary_result_rejected"
                 elif state.sweep_raw_drained:
+                    state.leaf_stop_reason = state.sweep_stop_reason or "raw_prefix_drained"
                     remaining_passes = max(
                         0,
                         self._config.threshold_full_sweep_max_passes
@@ -3147,6 +3165,10 @@ class CompactionMixin:
                 "budget_exhausted": final_stop_reason
                 in {"pass_budget_exhausted", "time_budget_exhausted"},
                 **self._hidden_backlog_status(),
+                # Last, so the existing key order stays a prefix: the leaf loop's stop when a post-drain
+                # condensation's result replaced it as stop_reason.
+                **({"leaf_stop_reason": state.leaf_stop_reason}
+                   if state.leaf_stop_reason and state.leaf_stop_reason != final_stop_reason else {}),
             }
         self._write_generated_ignored_placeholder_hash_counts(
             self._generated_placeholder_digest_budget_for_active_replay(compressed)
