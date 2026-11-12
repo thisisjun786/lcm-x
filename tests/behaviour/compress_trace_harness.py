@@ -556,6 +556,7 @@ OBSERVED_ATTRIBUTES = (
     "_thread_context_session_id",
     "_uid_coverage_audit",
     "_uid_coverage_owner",
+    "_uid_covered_groups",
     "_uid_source_bindings",
     "_uid_sparse_coverage",
     "_uid_superseded_store_ids",

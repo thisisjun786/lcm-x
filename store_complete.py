@@ -102,14 +102,16 @@ class StoreCompleteMixin:
             rows.update((int(row["store_id"]), row) for row in page if self._identity_anchor_owned(row, carry))
         return [rows[key] for key in sorted(rows) if reached is None or key <= reached], reached is not None
 
-    def _store_complete_node_covered(self, store_ids) -> set:
-        """Rows an existing message-sourced summary (any session) already covers: never reclaimed."""
+    def _store_complete_node_covered(self, store_ids, session_id: str | None = None) -> set:
+        """Rows an existing message-sourced summary (any session, or only ``session_id``'s) already covers: never
+        reclaimed."""
         if not store_ids:
             return set()
         found = self._store.connection.execute(
             "SELECT DISTINCT source.value FROM summary_nodes AS node, json_each(node.source_ids) AS source "
-            "WHERE node.source_type = 'messages' AND source.value IN (SELECT value FROM json_each(?))",
-            (str(sorted(store_ids)),),
+            "WHERE node.source_type = 'messages' AND source.value IN (SELECT value FROM json_each(?))"
+            + (" AND node.session_id = ?" if session_id else ""),
+            (str(sorted(store_ids)), *((session_id,) if session_id else ())),
         ).fetchall()
         return {int(row[0]) for row in found}
 
@@ -279,7 +281,10 @@ class StoreCompleteMixin:
         before a rewritten host occurrence claims their lineage. The publication
         transaction validates bindings and advances only a contiguous safe prefix.
         """
-        covered = self._store_complete_node_covered(set(full_map.values()))
+        # Claimed ids too: an unmapped row the identity anchor pairs with an already summarized row (its host copy
+        # left the view with a covered group) claims nothing; publishing that lineage again is refused.
+        covered = self._store_complete_node_covered(set(full_map.values())
+                                                    | {sid for ids in claims.values() for sid in ids})
         out = []
         self._uid_source_bindings = {}
         self._uid_superseded_store_ids = set(superseded)

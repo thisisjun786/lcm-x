@@ -105,6 +105,8 @@ class _CompressionState:
     valve_skipped: set = field(default_factory=set)  # fork leaf valve: id() of the host rows it skipped
     valve_skips: int = 0
     valve_reason: str = ""
+    covered_groups_checked: bool = False  # fork: the covered host groups are dropped once per compression
+    covered_drop_store_ids: List[int] = field(default_factory=list)  # fork: their store ids, excluded by each leaf
     _compress_started: float = 0.0
     observed_prompt_tokens: Optional[int] = None
     force_overflow: bool = False
@@ -1603,6 +1605,7 @@ class CompactionMixin:
 
     def _uid_leaf_candidates(self, candidate, view, full_map):
         """Keep unresolved occurrences live while allowing other groups to drain."""
+        self._uid_covered_groups = []
         has_uid = any(isinstance(m.get("message_uid"), str) and m["message_uid"] for m in view)
         # The leaf builder's covered set (_uid_set_leaf_input): every mapped id an existing node covers.
         settled = self._store_complete_node_covered(set(full_map.values()))
@@ -1665,6 +1668,8 @@ class CompactionMixin:
                 while stop < len(candidate) and candidate[stop].get("role") == "tool":
                     stop += 1
             group = candidate[index:stop]
+            if has_uid and all(full_map.get(id(m)) in settled for m in group):
+                self._uid_covered_groups.append(group)  # every row mapped and summarized: _drop_covered_host_groups
             # A host group whose rows are all node-covered (also at or below the frontier, which the host may
             # still show) gives the leaf builder nothing: skip it before the oldest chunk is chosen.
             if not any(id(m) in unresolved or full_map.get(id(m)) in covered for m in group) and not all(
@@ -1672,6 +1677,48 @@ class CompactionMixin:
                 out.extend(group)
             index = stop
         return out
+
+    def _drop_covered_host_groups(self, state: _CompressionState, leaf: _LeafState) -> None:
+        """Fork: drop the host groups ``_uid_leaf_candidates`` found fully summarized (every row maps to a store row
+        an existing node covers) when this session's own nodes cover them, from ``[leading anchors, fresh tail)``.
+
+        A compaction run publishes each leaf as it goes and rewrites the host view only at its end; a process killed
+        between the two leaves committed sources in the view. The #457 replay drop removes them only as an exact run
+        through the lifecycle frontier, so with the frontier held below them (an uncovered row the host no longer
+        shows) they stayed in every returned context, next to the summaries that represent them. Assembly emits those
+        summaries from the DAG. Whole groups only (a tool call with all its results); a group with any unmapped,
+        unresolved or uncovered row, the fresh tail and a uid-less view are never touched. Rows stay stored; like the
+        #457 drops they are publication exclusions of every later leaf of this compression, so a contiguous
+        publication can pass over them. One coverage read, only when a covered group exists."""
+        groups = getattr(self, "_uid_covered_groups", None) or []
+        full_map = self._compress_run.store_ids_by_message_id or {}
+        if not groups or not self._session_id:
+            return
+        own = self._store_complete_node_covered({full_map[id(m)] for group in groups for m in group},
+                                                session_id=self._session_id)
+        position = {id(m): i for i, m in enumerate(state.working_messages)}
+        drops = set()
+        for group in groups:
+            indexes = [position.get(id(m)) for m in group]
+            if (None in indexes or indexes[0] < leaf.leading_anchor_count or indexes[-1] >= leaf.fresh_tail_start
+                    or indexes != list(range(indexes[0], indexes[-1] + 1))
+                    or (indexes[-1] + 1 < len(state.working_messages)  # a result outside the group: keep both
+                        and state.working_messages[indexes[-1] + 1].get("role") == "tool")
+                    or not all(full_map[id(m)] in own for m in group)):
+                continue
+            drops.update(indexes)
+        if not drops:
+            return
+        store_ids = sorted(full_map[id(state.working_messages[i])] for i in drops)
+        state.covered_drop_store_ids = store_ids
+        tokens = count_messages_tokens([state.pressure_messages[i] for i in sorted(drops)])
+        state.working_messages = [m for i, m in enumerate(state.working_messages) if i not in drops]
+        state.pressure_messages = [m for i, m in enumerate(state.pressure_messages) if i not in drops]
+        state.estimated_active_tokens = max(0, state.estimated_active_tokens - tokens)
+        state.dropped_replayed_scaffold_messages = True  # the no-leaf path reassembles the context
+        leaf.fresh_tail_start = self._fresh_tail_start(state.working_messages)
+        logger.info("LCM dropped %d host rows that existing leaf nodes already cover: tokens=%d store_ids=%d..%d "
+                    "frontier=%d", len(drops), tokens, store_ids[0], store_ids[-1], int(self._last_compacted_store_id or 0))
 
     def _uid_coverage_status(self):
         if (self._bypasses_lcm_context_management() or self.side_channel_active
@@ -3470,9 +3517,14 @@ class CompactionMixin:
             state.focus_topic = self._derive_auto_focus_topic(state.working_messages)
 
         candidate_raw = state.working_messages[leaf.leading_anchor_count:leaf.fresh_tail_start]
+        self._uid_covered_groups = []
         candidate_raw = self._uid_leaf_candidates(
             candidate_raw, state.working_messages[leaf.leading_anchor_count:],
             self._compress_run.store_ids_by_message_id or {})
+        if not state.covered_groups_checked:
+            state.covered_groups_checked = True
+            self._drop_covered_host_groups(state, leaf)
+        leaf.publication_excluded_store_ids.extend(state.covered_drop_store_ids)
         if state.valve_skipped:  # fork leaf valve: chunks no row of which can become leaf input are not reselected
             candidate_raw = [message for message in candidate_raw if id(message) not in state.valve_skipped]
         # #922: when assembly can repeat the current objective verbatim, a leaf
@@ -3836,6 +3888,10 @@ class CompactionMixin:
             state.prep_low_water = prep_low_water
             state.sweep_raw_drained = sweep_raw_drained
             action, result = self._select_leaf_candidate(state, leaf, dependent_reply_message_ids)
+            working_messages = state.working_messages  # fork: the covered host groups it dropped
+            pressure_messages = state.pressure_messages
+            estimated_active_tokens = state.estimated_active_tokens
+            dropped_replayed_scaffold_messages = state.dropped_replayed_scaffold_messages
             focus_topic = state.focus_topic
             noop_reason = state.noop_reason
             sweep_stop_reason = state.sweep_stop_reason
