@@ -2101,6 +2101,64 @@ class CompactionMixin:
                 after_store_id = int(rows[-1].get("store_id") or after_store_id)
         return proofs
 
+    def _uid_committed_replay_drops(
+        self,
+        working: List[Dict[str, Any]],
+        scaffold: int,
+        start: int,
+        frontier: int,
+        ids: dict[int, int],
+    ) -> tuple[list[int], Optional[dict[int, int]], int, int]:
+        """fork (lina#455): the #457 drop when the replayed run is not an exact run of the stored rows through F.
+
+        A host list rebuilt after a compaction can skip stored rows a leaf covers (copies, older stored versions;
+        hub 11-10: 280 such rows inside the host's 607 covered rows), so the exact match above fails for good and
+        every covered row stays raw. In a uid view each host row names its stored rows: a host row is dropped (its
+        committed leaf replaces it) only when its ``message_uid`` is bound (canonical or version) to stored rows
+        that are all this session's, of this conversation, at or below F and sources of this session's leaves.
+        Rows are dropped from ``start`` in host order and the drop stops at the first row that fails, so every row
+        kept stays after the summary in its own order; the drop never ends between a tool call and its result.
+        Nothing is deleted: the rows stay stored and the leaves expand to them."""
+        if not any(isinstance(m.get("message_uid"), str) and m["message_uid"] for m in working[start:]):
+            return [], ids, 0, 0
+        lineage, _reason = self._host_uid_lineage_key()
+        if not lineage or not self._store._host_uid_table_exists():
+            return [], ids, 0, 0
+        uids = sorted({m["message_uid"] for m in working[start:]
+                       if isinstance(m.get("message_uid"), str) and m["message_uid"]})
+        bound: dict[str, list[tuple[int, str, str]]] = {}
+        for offset in range(0, len(uids), 500):
+            chunk = uids[offset:offset + 500]
+            for uid, store_id, owner, conversation in self._store._conn.execute(
+                    "SELECT binding.uid, m.store_id, m.session_id, m.conversation_id FROM host_uid_bindings AS binding "
+                    "JOIN messages AS m ON m.store_id = binding.store_id WHERE binding.lineage_key = ? "
+                    f"AND binding.kind IN ('canonical', 'version') AND binding.uid IN ({','.join('?' * len(chunk))})",
+                    [lineage, *chunk]):
+                bound.setdefault(uid, []).append((int(store_id), str(owner or ""), str(conversation or "").strip()))
+        sources = self._dag.get_leaf_sources_through(self._session_id, max(
+            [frontier, *(store_id for rows in bound.values() for store_id, _owner, _conversation in rows)]))
+        lineage_ids = {store_id: node for node, _tokens, store_id in sources}  # every leaf, so (2) is its own check
+        tokens_of = {node: tokens for node, tokens, _store_id in sources}
+        conversations = {"", str(self._conversation_id or "")}
+        stop = start
+        while stop < len(working):
+            rows = bound.get(working[stop].get("message_uid")) if isinstance(
+                working[stop].get("message_uid"), str) else None
+            if not rows or not all(owner == self._session_id and conversation in conversations
+                                   and store_id <= frontier and store_id in lineage_ids
+                                   for store_id, owner, conversation in rows):
+                break
+            stop += 1
+        while stop > start and stop < len(working) and working[stop].get("role") == "tool":
+            stop -= 1  # never leave a tool result without the call the summary replaced
+        if stop == start:
+            return [], ids, 0, 0
+        dropped_ids = {store_id for message in working[start:stop]
+                       for store_id, _owner, _conversation in bound[message["message_uid"]]}
+        covering = {lineage_ids[store_id] for store_id in dropped_ids if store_id in lineage_ids}
+        kept = sum(1 for message in working[stop:] if 0 < ids.get(id(message), 0) <= frontier)
+        return [*range(scaffold, start), *range(start, stop)], ids, sum(tokens_of[node] for node in covering), kept
+
     def _committed_replay_drops(
         self,
         working: List[Dict[str, Any]],
@@ -2148,7 +2206,7 @@ class CompactionMixin:
             ):
                 break
         else:
-            return [], ids, 0, 0
+            return self._uid_committed_replay_drops(working, scaffold, start, frontier, ids)
         after = self._store.get_session_messages_after(self._session_id, frontier, limit=1)
         if [int(row["store_id"]) for row in after] != ([ids[id(working[end])]] if end < len(working) else []):
             return [], ids, 0, 0

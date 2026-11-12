@@ -1346,3 +1346,103 @@ def test_a_duplicate_without_a_covered_twin_of_its_own_still_holds_the_frontier(
         assert _twin_frontier(engine) < uncovered or uncovered in engine._store_complete_node_covered({uncovered})
     finally:
         engine.shutdown()
+
+
+# -- 16. the host list skips covered stored rows, so the #457 exact run never matches (hub 11-10: 280 of 887) -------
+
+
+def _skipped_rows_session(engine, stamps, *, frontier_past=True):
+    """30 stored, uid-bound turns; after every 4th turn's reply the store also holds a uid-less row the host list
+    never shows (an older stored copy). Leaves of 20 rows cover every stored row, so the frontier is at the last
+    one, and the host run through F is not an exact run of the stored rows (the skipped rows sit inside it)."""
+    from tests.test_fork_covered_head import _rows, _store
+
+    rows = _rows("old", 30, stamps)
+    pairs = []
+    for index, row in enumerate(rows):
+        pairs.append((row, _store(engine, [row])[0]))
+        if row["role"] == "assistant" and not row.get("tool_calls") and index % 16 == 3:
+            skipped = engine._store.append("S", {"role": "assistant", "content": "older stored reply " + str(index),
+                                                 "timestamp": row["timestamp"]}, conversation_id="conv")
+            pairs.append(({}, skipped))
+    for start in range(0, len(pairs), 20):
+        _publish_cover(engine, pairs[start:start + 20])
+    return rows, [sid for row, sid in pairs if row]
+
+
+def test_covered_host_rows_leave_as_their_summary_when_the_store_holds_rows_the_host_skips(tmp_path, monkeypatch,
+                                                                                            clock, caplog):
+    import itertools
+
+    from hermes_lcm import tools as lcm_tools
+    from tests.test_fork_covered_head import _rows, _store
+
+    engine = _twin_engine(tmp_path, monkeypatch)
+    try:
+        stamps = itertools.count(1_700_000_000)
+        rows, ids = _skipped_rows_session(engine, stamps)
+        assert _twin_frontier(engine) == max(engine._store_complete_node_covered(set(ids)) | set(ids))
+        new = _rows("new", 2, stamps)
+        _store(engine, new)
+        view = [{"role": "system", "content": "sys"}, *[dict(row) for row in rows + new]]
+        stored = len(engine._store.get_session_messages("S"))
+        tokens, result = _cold_pass_over(engine, clock, caplog, view)
+        assert count_messages_tokens(result) <= 0.5 * tokens
+        assert _conv_event(engine)["outcome"] == "shrunk"
+        assert len(engine._store.get_session_messages("S")) == stored  # nothing deleted
+        assembled = json.dumps(result, ensure_ascii=False)
+        assert "Synthetic leaf summary." in assembled and rows[0]["content"] not in assembled
+        # The summary that replaced the first host row is a leaf over that row, and the leaf expands to its text.
+        node = next(n for n in engine._dag.get_session_nodes("S") if n.depth == 0 and ids[0] in n.source_ids)
+        expanded = json.loads(lcm_tools.lcm_expand({"node_id": node.node_id, "max_tokens": 100_000}, engine=engine))
+        assert rows[0]["content"] in json.dumps(expanded, ensure_ascii=False)
+    finally:
+        engine.shutdown()
+
+
+@pytest.mark.parametrize("shape", ["no_uid", "above_frontier", "uncovered", "mixed_versions", "other_session"])
+def test_a_host_row_the_uid_drop_cannot_prove_stays_in_the_list(tmp_path, monkeypatch, shape):
+    import itertools
+
+    from hermes_lcm.dag import SummaryNode
+    from tests.test_fork_rewritten_uid_mapping import bind
+
+    engine = _twin_engine(tmp_path, monkeypatch)
+    try:
+        stamps = itertools.count(1_700_000_000)
+        rows, ids = _skipped_rows_session(engine, stamps)
+        view = [{"role": "system", "content": "sys"}, *[dict(row) for row in rows]]
+        k = next(i for i, row in enumerate(view) if row.get("role") == "user" and i > 40)  # mid-run, a turn start
+        uid = view[k]["message_uid"]
+        conn = engine._store._conn
+        if shape == "no_uid":
+            view[k].pop("message_uid")
+        elif shape == "above_frontier":
+            later = engine._store.append("S", {"role": "user", "content": "later copy"}, conversation_id="conv")
+            engine._dag.add_node(SummaryNode(session_id="S", summary="Sparse leaf above F.", depth=0,
+                                             source_ids=[later], source_type="messages", token_count=8,
+                                             source_token_count=100))
+            bind(engine, uid, later, kind="version")
+        elif shape in ("uncovered", "mixed_versions"):
+            loose = engine._store.append("S", {"role": "user", "content": "uncovered version"}, conversation_id="conv")
+            bind(engine, uid, loose, kind="version")
+            if shape == "uncovered":  # the row's only binding is the uncovered one
+                conn.execute("DELETE FROM host_uid_bindings WHERE uid = ? AND store_id != ?", (uid, loose))
+            frontier = loose  # at or below F, as a frontier moved by an exclusion would leave it
+            conn.execute("UPDATE lcm_lifecycle_state SET current_frontier_store_id = ? WHERE conversation_id = ?",
+                         (frontier, "conv"))
+            conn.commit()
+            engine._last_compacted_store_id = frontier
+        elif shape == "other_session":
+            other = engine._store.append("OTHER", {"role": "user", "content": view[k]["content"]}, conversation_id="conv")
+            engine._dag.add_node(SummaryNode(session_id="OTHER", summary="Other session leaf.", depth=0,
+                                             source_ids=[other], source_type="messages", token_count=8,
+                                             source_token_count=100))
+            conn.execute("DELETE FROM host_uid_bindings WHERE uid = ?", (uid,))
+            conn.commit()
+            bind(engine, uid, other)
+        engine._last_compacted_store_id = _twin_frontier(engine)  # the bound engine's marker, as compress() keeps it
+        drops, _ids, _tokens, _kept = engine._committed_replay_drops(view, 1)
+        assert drops and k not in drops and max(drops) < k  # the rows before it go, it and every later row stay
+    finally:
+        engine.shutdown()
