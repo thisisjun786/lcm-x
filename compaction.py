@@ -2142,13 +2142,22 @@ class CompactionMixin:
         lineage_ids = {store_id: node for node, _tokens, store_id in sources}  # every leaf, so (2) is its own check
         tokens_of = {node: tokens for node, tokens, _store_id in sources}
         conversations = {"", str(self._conversation_id or "")}
+        # (4) the host row's CURRENT payload must be a stored or host-rewrite form of a bound row (the exact path's
+        # _replay_row_admits test, with the same override loading): a host that resent a covered row under its uid
+        # with new bytes and no stored version would otherwise lose those bytes (Codex review, PR #9).
+        fetched: dict = {}
+        self._host_uid_fetch([store_id for rows in bound.values() for store_id, _owner, _conversation in rows], fetched)
+        self._load_host_rewrite_overrides([row for row in fetched.values() if row])
+        # The fresh tail stays: the exact path consumes a run that ends at F, never the protected tail (#1162 T1).
+        end = min(len(working), self._fresh_tail_start(working))
         stop = start
-        while stop < len(working):
+        while stop < end:
             rows = bound.get(working[stop].get("message_uid")) if isinstance(
                 working[stop].get("message_uid"), str) else None
             if not rows or not all(owner == self._session_id and conversation in conversations
                                    and store_id <= frontier and store_id in lineage_ids
-                                   for store_id, owner, conversation in rows):
+                                   for store_id, owner, conversation in rows) or self._host_uid_bytes_match(
+                    [store_id for store_id, _owner, _conversation in rows], working[stop], fetched) is None:
                 break
             stop += 1
         while stop > start and stop < len(working) and working[stop].get("role") == "tool":

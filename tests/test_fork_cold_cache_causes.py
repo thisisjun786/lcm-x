@@ -1549,3 +1549,39 @@ def test_the_drop_is_not_run_again_in_a_view_without_host_uids(tmp_path, monkeyp
         assert len(calls) == 1
     finally:
         engine.shutdown()
+
+
+# -- 18. the uid drop proves the host row's current payload, not only its binding (Codex P1 on PR #9) --------------
+
+
+@pytest.mark.parametrize("role, rewrite", [
+    ("user", lambda text: text + "\n\nSynthetic appended instruction 7f3a: keep the blue config."),
+    ("assistant", lambda text: text + " extended with synthetic detail 7f3a"),
+    ("tool", lambda text: "[Externalized tool output: tool=terminal; tool_call_id=old_c0; ref=synthetic-7f3a]"),
+])
+def test_a_host_row_rewritten_under_its_uid_without_a_stored_version_is_never_dropped(tmp_path, monkeypatch, clock,
+                                                                                     caplog, role, rewrite):
+    # The host resends a covered row under the same message_uid with new content and no new bound version is stored
+    # (tests/test_fork_rewritten_uid_mapping.py::test_rewrite_without_stored_version_maps_to_original). The leaf
+    # covers the OLD bytes, so dropping the row loses the current payload: it must stay in the list.
+    import itertools
+
+    from tests.test_fork_covered_head import _rows, _store
+
+    engine = _twin_engine(tmp_path, monkeypatch)
+    try:
+        stamps = itertools.count(1_700_000_000)
+        rows, _ids = _skipped_rows_session(engine, stamps)
+        new = _rows("new", 2, stamps)
+        _store(engine, new)
+        view = [{"role": "system", "content": "sys"}, *[dict(row) for row in rows + new]]
+        index = next(i for i, row in enumerate(view) if row.get("role") == role
+                     and (role != "assistant" or not row.get("tool_calls")))
+        view[index]["content"] = rewrite(view[index]["content"])
+        current = view[index]["content"]
+        stored = len(engine._store.get_session_messages("S"))
+        _tokens, result = _cold_pass_over(engine, clock, caplog, view)
+        assert current in [row.get("content") for row in result]  # the current payload is still sent
+        assert len(engine._store.get_session_messages("S")) == stored  # and nothing was deleted
+    finally:
+        engine.shutdown()
