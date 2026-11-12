@@ -1446,3 +1446,106 @@ def test_a_host_row_the_uid_drop_cannot_prove_stays_in_the_list(tmp_path, monkey
         assert drops and k not in drops and max(drops) < k  # the rows before it go, it and every later row stay
     finally:
         engine.shutdown()
+
+
+# -- 17. one cold pass finishes the work: the drop runs again after the pass moved the frontier -------------------
+
+
+@pytest.mark.parametrize("shape", ["identical", "one_character"])
+def test_one_cold_pass_replaces_the_covered_rows_its_own_retry_uncovered(tmp_path, monkeypatch, clock, caplog, shape):
+    # identical: the retry moves the frontier over a covered-twin copy; one_character: the retry's hidden-only leaf
+    # fills the hole and the frontier then moves over the covered rows. The first attempt is emptied (as the hub
+    # replay's FIRST_EMPTY), so all of that happens inside the retry, one compress() call.
+    import itertools
+
+    from hermes_lcm import tools as lcm_tools
+    from tests.test_fork_covered_head import _rows, _store
+
+    engine = _twin_engine(tmp_path, monkeypatch)
+    try:
+        stamps = itertools.count(1_700_000_000)
+        rows, ids, hole, copy_sid, _uncovered = _twin_session(engine, stamps, shape)
+        assert _twin_frontier(engine) == ids[hole]
+        new = _rows("new", 2, stamps)
+        _store(engine, new)
+        view = [{"role": "system", "content": "sys"}, *[dict(row) for row in rows[hole + 1:] + new]]
+        original = LCMEngine._compress_impl
+        calls = []
+
+        def first_empty(self, messages, **kwargs):
+            calls.append(len(messages))
+            return list(messages) if len(calls) == 1 else original(self, messages, **kwargs)
+
+        monkeypatch.setattr(LCMEngine, "_compress_impl", first_empty)
+        stored = len(engine._store.get_session_messages("S"))
+        tokens, result = _cold_pass_over(engine, clock, caplog, view)
+        assert len(calls) == 2  # the emptied first attempt and the retry
+        assert _twin_frontier(engine) >= ids[-1]
+        assert count_messages_tokens(result) <= 0.5 * tokens
+        assert _conv_event(engine)["outcome"] == "shrunk"
+        assert len(engine._store.get_session_messages("S")) == stored  # nothing deleted
+        replaced = rows[hole + 1]
+        assert replaced["content"] not in json.dumps(result, ensure_ascii=False)
+        node = next(n for n in engine._dag.get_session_nodes("S") if n.depth == 0 and ids[hole + 1] in n.source_ids)
+        expanded = json.loads(lcm_tools.lcm_expand({"node_id": node.node_id, "max_tokens": 100_000}, engine=engine))
+        assert replaced["content"] in json.dumps(expanded, ensure_ascii=False)
+    finally:
+        engine.shutdown()
+
+
+def _count_replay_drops(monkeypatch) -> list:
+    original = LCMEngine._committed_replay_drops
+    calls = []
+
+    def counted(self, working, start):
+        calls.append(start)
+        return original(self, working, start)
+
+    monkeypatch.setattr(LCMEngine, "_committed_replay_drops", counted)
+    return calls
+
+
+def test_the_drop_is_not_run_again_when_the_pass_moved_nothing(tmp_path, monkeypatch, caplog):
+    # A uid view, every host row covered at or below F, and the drop stops at the first host row (no uid): the pass
+    # drains without a leaf and without moving the frontier, so the drop runs once, as before.
+    import itertools
+
+    engine = _twin_engine(tmp_path, monkeypatch)
+    try:
+        rows, ids = _skipped_rows_session(engine, itertools.count(1_700_000_000))
+        engine._last_compacted_store_id = _twin_frontier(engine)
+        view = [{"role": "system", "content": "sys"}, *[dict(row) for row in rows]]
+        view[1].pop("message_uid")
+        calls = _count_replay_drops(monkeypatch)
+        engine.threshold_tokens = int(count_messages_tokens(view) / 1.2)
+        with caplog.at_level(logging.INFO):
+            engine.compress(view, current_tokens=count_messages_tokens(view), force=True)
+        assert any("reason=raw_prefix_drained" in r.getMessage() or " leaf_stop=raw_prefix_drained" in r.getMessage()
+                   for r in caplog.records if r.getMessage().startswith(STOP_LINE))  # the drained point was reached
+        assert len(calls) == 1
+    finally:
+        engine.shutdown()
+
+
+def test_the_drop_is_not_run_again_in_a_view_without_host_uids(tmp_path, monkeypatch, caplog):
+    # The one_character shape with the host uids stripped from the view: the pass publishes the hole-filling leaf
+    # (so it did move something), drains, and still runs the drop once, as the uid path never applies here.
+    import itertools
+
+    engine = _twin_engine(tmp_path, monkeypatch)
+    try:
+        rows, ids, hole, copy_sid, _uncovered = _twin_session(engine, itertools.count(1_700_000_000), "one_character")
+        view = [{"role": "system", "content": "sys"},
+                *[{k: v for k, v in row.items() if k != "message_uid"} for row in rows[hole + 1:]]]
+        engine._ingest_cursor = len(view)
+        calls = _count_replay_drops(monkeypatch)
+        tokens = count_messages_tokens(view)
+        engine.threshold_tokens = int(tokens / 1.2)
+        with caplog.at_level(logging.INFO):
+            engine.compress(view, current_tokens=tokens, force=True)
+        assert copy_sid in engine._store_complete_node_covered({copy_sid})  # a leaf was published in this pass
+        assert any("reason=raw_prefix_drained" in r.getMessage() or " leaf_stop=raw_prefix_drained" in r.getMessage()
+                   for r in caplog.records if r.getMessage().startswith(STOP_LINE))
+        assert len(calls) == 1
+    finally:
+        engine.shutdown()

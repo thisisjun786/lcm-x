@@ -144,6 +144,8 @@ class _CompressionState:
     promoted_leaves: int = 0
 
     leaf_compacted_this_turn: bool = False
+    compacted_at_start: int = 0  # fork (lina#455): the in-process frontier when the leaf loop starts
+    replay_recheck: str = ""  # fork (lina#455): "" | "pending" | "done", see _select_leaf_candidate
     prep_freed: int = 0
     prep_low_water: float = 0.0
 
@@ -2664,7 +2666,10 @@ class CompactionMixin:
         # those with the scaffold, keeping any row committed lineage does not hold.
         # Reuse the map when the pass maps this same list.
         drops, leaf.premapped_store_ids, kept = set(range(leaf.leading_anchor_count, leaf.candidate_start)), None, 0
-        if leaf_passes == 0 and not state.resumed_prefix and not leaf.hidden_backlog:
+        if ((leaf_passes == 0 or state.replay_recheck == "pending")  # fork (lina#455): one recheck, see above
+                and not state.resumed_prefix and not leaf.hidden_backlog):
+            if state.replay_recheck == "pending":
+                state.replay_recheck = "done"
             step_started = time.monotonic() if state.threshold_full_sweep_active else 0.0
             resumed, store_ids, summary_tokens, kept = self._committed_replay_drops(
                 state.working_messages, leaf.candidate_start
@@ -3604,6 +3609,18 @@ class CompactionMixin:
                 if state.threshold_full_sweep_active:
                     state.sweep_raw_drained, state.sweep_stop_reason = False, "no_usable_leaf_input"
                 return "break", None
+            if (not state.replay_recheck and not state.resumed_prefix
+                    and (state.leaf_compacted_this_turn
+                         or int(self._last_compacted_store_id or 0) != state.compacted_at_start)
+                    and any(isinstance(m.get("message_uid"), str) and m["message_uid"]
+                            for m in state.working_messages)):
+                # fork (lina#455): this pass moved the frontier (_pass_accounted_rows) or published a leaf (one that
+                # fills a hole), and nothing is left to summarise. The committed-replay drop (#457 and its uid path)
+                # only runs before the first leaf, so the covered host rows it can now replace stayed raw until the
+                # next compress(): a cold pass whose retry did this work still ended unchanged (hub 11-10 replay:
+                # 393 rows, 129,198 tokens, then 27 rows on the next call). Run that drop once more, now.
+                state.replay_recheck = "pending"
+                return "continue", None
             if state.threshold_full_sweep_active:
                 state.sweep_raw_drained = True
                 state.sweep_stop_reason = "raw_prefix_drained"
@@ -3812,6 +3829,7 @@ class CompactionMixin:
         dropped_replayed_scaffold_messages = False
         resumed_prefix, resumed_ahead = False, 0
         leaf_passes = 0
+        state.compacted_at_start = int(self._last_compacted_store_id or 0)
 
         explicit_focus_topic = focus_topic is not None
 
