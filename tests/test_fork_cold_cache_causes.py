@@ -1213,3 +1213,136 @@ def test_seconds_zero_turns_the_whole_family_off(engines, clock):
     assert engine.should_compress_preflight(_messages()) is False
     assert engine.should_compress(1000) is False
     assert _record(engine) == {}
+
+
+# -- 15. a stored duplicate of a covered row blocks the frontier (11-12 hub copy: store 100501 = 100464) -------------
+
+
+def _twin_engine(tmp_path, monkeypatch):
+    from tests.test_fork_late_copy_mapping import _home
+
+    monkeypatch.setattr(lcm_engine, "summarize_with_escalation", lambda **kw: ("Synthetic leaf summary.", 1))
+    engine = LCMEngine(config=LCMConfig(fresh_tail_count=4, leaf_chunk_tokens=3000, dynamic_leaf_chunk_max=3000,
+                                        threshold_full_sweep_enabled=True, cold_gap_compaction_seconds=GAP,
+                                        database_path=str(tmp_path / "lcm.db")), hermes_home=_home(tmp_path))
+    engine.on_session_start("S", platform="telegram", context_length=WINDOW, conversation_id="conv")
+    engine.update_model("model-a", WINDOW, provider="provider-a", api_mode="responses")
+    return engine
+
+
+def _twin_frontier(engine) -> int:
+    return engine._lifecycle.get_by_conversation("conv").current_frontier_store_id
+
+
+def _publish_cover(engine, rows_ids, session="S"):
+    """One depth-0 leaf over ``rows_ids`` (host row, store id), published as a sparse uid leaf is."""
+    from hermes_lcm.dag import SummaryNode
+
+    engine._uid_source_bindings = {sid: row["message_uid"] for row, sid in rows_ids if row.get("message_uid")}
+    engine._uid_sparse_coverage = True
+    engine._store_complete_copy_exclusion_proofs = {}
+    ids = [sid for _row, sid in rows_ids]
+    node = SummaryNode(session_id=session, summary="Synthetic leaf summary.", depth=0, source_ids=ids,
+                       source_type="messages", token_count=8, source_token_count=5000)
+    engine._publish_leaf_node(node, level=1, model="synthetic",
+                              expected_frontier=engine._lifecycle.get_by_conversation("conv").current_frontier_store_id,
+                              consumed_store_ids=ids, publication_excluded_store_ids=[], filter_exclusion_proofs={},
+                              carried_ranges=[])
+    engine._uid_sparse_coverage = False
+
+
+def _twin_session(engine, stamps, shape):
+    """30 stored, uid-bound turns; right after the tool result T of turn 3 a second, uid-less tool row T' is stored
+    (``identical``: T's bytes, as store 100501 repeats 100464). Leaves of 20 rows cover every row but T', so the
+    frontier stands at T, in front of T'. The adversarial shapes change T' (one character, another tool_call_id)
+    or move its only twin to another session's leaf."""
+    from tests.test_fork_covered_head import _rows, _store
+
+    rows = _rows("old", 30, stamps)
+    hole = next(i for i, row in enumerate(rows) if row["role"] == "tool" and row["content"].startswith("old output 3 "))
+    twin = {k: v for k, v in rows[hole].items() if k != "message_uid"}
+    if shape in ("one_character", "twin_in_other_session"):
+        twin["content"] = twin["content"][:-1] + "X"
+    elif shape == "other_call_id":
+        twin["tool_call_id"] = "old_c3_again"
+    ids = _store(engine, rows[:hole + 1])
+    copy_sid = engine._store.append("S", twin, conversation_id="conv")
+    ids += _store(engine, rows[hole + 1:])
+    pairs = [(row, sid) for row, sid in zip(rows, ids)]
+    if shape == "twin_in_other_session":
+        # T' differs from T in this session; its byte-identical twin is another session's row, which that
+        # session's leaf covers.
+        from hermes_lcm.dag import SummaryNode
+
+        other = engine._store.append("OTHER", dict(twin), conversation_id="conv")
+        engine._dag.add_node(SummaryNode(session_id="OTHER", summary="Other session leaf.", depth=0,
+                                         source_ids=[other], source_type="messages", token_count=8,
+                                         source_token_count=100))
+    uncovered = copy_sid
+    covered_pairs = [pair for pair in pairs if pair[1] != uncovered]
+    for start in range(0, len(covered_pairs), 20):
+        _publish_cover(engine, covered_pairs[start:start + 20])
+    return rows, ids, hole, copy_sid, uncovered
+
+
+def _cold_pass_over(engine, clock, caplog, view):
+    engine._ingest_cursor = len(view)
+    tokens = count_messages_tokens(view)
+    engine.threshold_tokens = int(tokens / 0.97)
+    _provider_call(engine, clock, T0)
+    clock.now = T0 + GAP
+    assert engine.should_compress(tokens) is True and engine._compaction_request.cold_gap is True
+    with caplog.at_level(logging.INFO):
+        result = engine.compress(view, current_tokens=tokens)
+    return tokens, result
+
+
+def test_a_covered_duplicate_no_longer_holds_the_frontier(tmp_path, monkeypatch, clock, caplog):
+    import itertools
+
+    from hermes_lcm import tools as lcm_tools
+    from tests.test_fork_covered_head import _rows, _store
+
+    engine = _twin_engine(tmp_path, monkeypatch)
+    try:
+        stamps = itertools.count(1_700_000_000)
+        rows, ids, hole, copy_sid, _uncovered = _twin_session(engine, stamps, "identical")
+        assert _twin_frontier(engine) == ids[hole] and copy_sid == ids[hole] + 1  # stuck in front of T'
+        new = _rows("new", 2, stamps)
+        _store(engine, new)
+        view = [{"role": "system", "content": "sys"}, *[dict(row) for row in rows[hole + 1:] + new]]
+        stored = len(engine._store.get_session_messages("S"))
+        tokens, result = _cold_pass_over(engine, clock, caplog, view)
+        # T' is accounted for by its covered twin: the frontier passes it and the covered rows behind it.
+        assert _twin_frontier(engine) >= ids[-1]
+        assert copy_sid not in engine._store_complete_node_covered({copy_sid})  # T' is not summarised twice
+        assert count_messages_tokens(result) <= 0.5 * tokens  # the covered rows left as their summaries
+        assert _conv_event(engine)["outcome"] == "shrunk"
+        assert len(engine._store.get_session_messages("S")) == stored  # nothing deleted
+        expanded = json.loads(lcm_tools.lcm_expand({"store_id": copy_sid, "max_tokens": 100_000}, engine=engine))
+        assert rows[hole]["content"] in json.dumps(expanded, ensure_ascii=False)  # T' is still there, whole
+    finally:
+        engine.shutdown()
+
+
+@pytest.mark.parametrize("shape", ["one_character", "other_call_id", "twin_in_other_session"])
+def test_a_duplicate_without_a_covered_twin_of_its_own_still_holds_the_frontier(tmp_path, monkeypatch, clock, caplog,
+                                                                               shape):
+    import itertools
+
+    from tests.test_fork_covered_head import _rows, _store
+
+    engine = _twin_engine(tmp_path, monkeypatch)
+    try:
+        stamps = itertools.count(1_700_000_000)
+        rows, ids, hole, copy_sid, uncovered = _twin_session(engine, stamps, shape)
+        assert _twin_frontier(engine) == uncovered - 1
+        new = _rows("new", 2, stamps)
+        _store(engine, new)
+        view = [{"role": "system", "content": "sys"}, *[dict(row) for row in rows[hole + 1:] + new]]
+        _cold_pass_over(engine, clock, caplog, view)
+        # Not a byte-identical copy of a row a leaf of this session covers: the frontier never passes it unsummarised
+        # (a hidden-only leaf takes it as the distinct row it is).
+        assert _twin_frontier(engine) < uncovered or uncovered in engine._store_complete_node_covered({uncovered})
+    finally:
+        engine.shutdown()

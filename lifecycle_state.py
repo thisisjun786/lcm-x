@@ -964,6 +964,93 @@ class LifecycleStateStore:
             conn.commit()
             return self.get_by_conversation(conversation_id)
 
+    def advance_over_accounted_rows(
+        self,
+        conversation_id: str,
+        session_id: str,
+        expected_frontier_store_id: int,
+        copy_exclusion_proofs: dict[int, int],
+        carried_ranges: list[tuple[str, int, int]] | None = None,
+    ) -> int:
+        """fork (lina#455): move the frontier, without a new leaf, over the owned rows right past it that are
+        already accounted for, and return the frontier.
+
+        A row is accounted for when a leaf of this session covers it, or when it is a copy whose proof
+        (``copy -> twin``, as ``stage_compaction_publication`` checks ``copy_exclusion_proofs``) holds: an
+        earlier owned row of this conversation with the same stored role, content, tool call id, tool calls
+        and tool name, which a leaf covers. The walk stops at the first owned row that is neither; nothing
+        moves when the frontier or the bound session changed since ``expected_frontier_store_id``.
+        """
+        expected = max(0, int(expected_frontier_store_id or 0))
+        allowed_carry_ranges = [
+            (str(source), int(start), int(end))
+            for source, start, end in (carried_ranges or [])
+            if source and 0 <= int(start) < int(end)
+        ]
+
+        def row_is_owned(row: Any) -> bool:
+            store_id, owner_session_id = int(row[0]), str(row[1] or "")
+            return owner_session_id == session_id or any(
+                owner_session_id == source and start < store_id <= end
+                for source, start, end in allowed_carry_ranges
+            )
+
+        with self._lock:
+            conn = self._conn
+            assert conn is not None
+            conn.execute("BEGIN IMMEDIATE")
+            try:
+                state = conn.execute(
+                    "SELECT current_session_id, current_frontier_store_id FROM lcm_lifecycle_state "
+                    "WHERE conversation_id = ?", (conversation_id,)).fetchone()
+                if state is None or str(state[0] or "") != session_id or int(state[1] or 0) != expected:
+                    conn.rollback()
+                    return int(state[1] or 0) if state is not None else expected
+                owned_clause, owned_args = owned_conversation_clause(conn, conversation_id)
+                columns = "store_id, session_id, conversation_id, content, role, tool_call_id, tool_calls, tool_name"
+                proofs = {int(copy): int(twin) for copy, twin in (copy_exclusion_proofs or {}).items()
+                          if int(twin) < int(copy)}
+                twins = {int(row[0]): row for row in conn.execute(
+                    f"SELECT {columns} FROM messages WHERE store_id IN (SELECT value FROM json_each(?))",
+                    (str(sorted(set(proofs.values()))),))} if proofs else {}
+                twin_covered = {int(r[0]) for r in conn.execute(
+                    "SELECT source.value FROM summary_nodes AS node, json_each(node.source_ids) AS source "
+                    "WHERE node.session_id = ? AND node.source_type = 'messages' "
+                    "AND source.value IN (SELECT value FROM json_each(?))",
+                    (session_id, str(sorted(twins))))} if twins else set()
+                end = expected
+                while True:
+                    page = conn.execute(
+                        f"SELECT {columns} FROM messages WHERE store_id > ? AND " + owned_clause
+                        + " ORDER BY store_id LIMIT 500", [end, *owned_args]).fetchall()
+                    owned = [row for row in page if row_is_owned(row)]
+                    covered = {int(r[0]) for r in conn.execute(
+                        "SELECT source.value FROM summary_nodes AS node, json_each(node.source_ids) AS source "
+                        "WHERE node.session_id = ? AND node.source_type = 'messages' "
+                        "AND source.value IN (SELECT value FROM json_each(?))",
+                        (session_id, str([int(row[0]) for row in owned])))} if owned else set()
+                    stopped = False
+                    for row in owned:
+                        store_id = int(row[0])
+                        twin = twins.get(proofs.get(store_id, 0))
+                        copy_proven = (twin is not None and row_is_owned(twin) and int(twin[0]) in twin_covered
+                                       and str(twin[2] or "").strip() in {"", conversation_id}
+                                       and tuple(twin[3:]) == tuple(row[3:]))
+                        if store_id not in covered and not copy_proven:
+                            stopped = True
+                            break
+                        end = store_id
+                    if stopped or len(page) < 500:
+                        break
+                    end = max(end, int(page[-1][0]))
+                if end > expected:
+                    self.stage_frontier_advance(conn, conversation_id, session_id, end)
+                conn.commit()
+                return end
+            except BaseException:
+                conn.rollback()
+                raise
+
     @staticmethod
     def stage_frontier_advance(
         conn: sqlite3.Connection,

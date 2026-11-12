@@ -186,6 +186,42 @@ class StoreCompleteMixin:
         label = self._hidden_backlog_label()
         return {"hidden_rows": label} if label is not None else {}
 
+    def _pass_accounted_rows(self, working) -> None:
+        """fork (lina#455): no host raw chunk is left, and the owned rows right past the frontier are already
+        accounted for: a leaf covers them, or they are uid-less copies whose identical twin a leaf covers (the
+        copy proof of ``_store_complete_copy_twins``). The hidden backlog does not count such a copy, so no leaf
+        is ever built over it, and the frontier stood in front of it for good (hub 11-12: store 100501 repeats
+        100464, which leaf 532 covers; the frontier stayed at 100500 for five days and every covered row above
+        it stayed raw, since the committed-replay drop (#457) only replaces rows through the frontier). Move
+        the frontier over those rows in one fenced lifecycle write (``advance_over_accounted_rows`` re-checks
+        every row); nothing is summarised, deleted or rewritten. A uid view only: there a sparse leaf never
+        walks a store interval, while the uid-less store walk already excludes such a copy with its proof."""
+        from .identity_anchor import identity_anchor_enabled
+
+        if (not identity_anchor_enabled() or not self._session_id or not self._conversation_id
+                or not any(isinstance(m.get("message_uid"), str) and m["message_uid"] for m in working)):
+            return
+        frontier = self._store_complete_frontier()
+        carry = self._load_compression_carry_ranges()
+        rows, _truncated = self._store_complete_owned_rows(frontier, None, carry)
+        if not rows:
+            return
+        covered = self._store_complete_node_covered({int(row["store_id"]) for row in rows})
+        twins, twin_covered = self._store_complete_copy_twins(
+            [row for row in rows if int(row["store_id"]) not in covered], carry)
+        proofs = {sid: next(t for t in matches if t in twin_covered)
+                  for sid, matches in twins.items() if any(t in twin_covered for t in matches)}
+        first = int(rows[0]["store_id"])
+        if first not in covered and first not in proofs:
+            return
+        passed = self._lifecycle.advance_over_accounted_rows(
+            str(self._conversation_id), str(self._session_id), frontier, proofs, carry)
+        if passed > frontier:
+            self._last_compacted_store_id = passed
+            logger.info("LCM frontier passed accounted rows: conversation=%s frontier=%d->%d covered_copies=%d",
+                        self._hold_conversation_key(), frontier, passed,
+                        sum(1 for sid in proofs if frontier < sid <= passed))
+
     def _store_complete_backlog(self, working, leading: int, copy_lookup_out=None) -> HiddenBacklog:
         """#581: no host raw chunk, but owned rows the view does not show wait above the frontier and
         below the first retained row: a hidden-only leaf is scheduled instead of a no-op."""

@@ -3527,6 +3527,8 @@ class CompactionMixin:
                 state.sweep_raw_drained = True
                 state.sweep_stop_reason = "raw_prefix_drained"
             return "break", None
+        if not candidate_raw and not leaf.hidden_backlog:  # fork (lina#455): covered rows and covered copies
+            self._pass_accounted_rows(state.working_messages)
         if not candidate_raw and not leaf.hidden_backlog:  # #581: owned hidden backlog is scheduled, not a no-op
             leaf.hidden_backlog = self._store_complete_backlog(state.working_messages, leaf.leading_anchor_count, leaf.copy_lookup)
         if not candidate_raw and not leaf.hidden_backlog:
