@@ -1702,7 +1702,7 @@
 "attr _last_leaf_content_filter_error=false",
 "attr _last_leaf_level_3_verbatim=false",
 "attr _last_leaf_summary_model=\"\"",
-"attr _last_threshold_full_sweep=sha12/len=12cf17e11d5b/433",
+"attr _last_threshold_full_sweep=sha12/len=cb11209417a6/473",
 "attr _lifecycle=sha12/len=b74727d164bb/392",
 "attr _no_progress_ingest_generation=0",
 "attr _no_progress_observed_tokens=3000",
@@ -1721,7 +1721,7 @@
 "attr _uid_sparse_coverage=false",
 "attr _uid_superseded_store_ids=[]",
 "attr compression_count=1",
-"attrs count=154 sha256=33cc5a606182aaa11db3310d8d843cab399702b609ad81e02ecac2281b0a7ea9"
+"attrs count=154 sha256=1e3fedf141a4bdf371f8dde59a55b8cae1355bea3c85099d85175d79acc9d8f6"
 ],
 "deferred-critical-small-backlog": [
 "compress attempt=1",
@@ -3957,7 +3957,7 @@
 "sql COMMIT",
 "return sha12/len=a9cff3a0f2d2/4061",
 "telemetry hook: concrete class method, callable, no instance shadow",
-"sweep ordered keys sha12/len=8e00719c92eb/346",
+"sweep ordered keys sha12/len=486abad3c7fc/365",
 "callable telemetry: completed leaf counted durably once",
 "leaf_prep after {\"chain\":[],\"counters\":{}}",
 "sql BEGIN IMMEDIATE",
@@ -3985,7 +3985,7 @@
 "attr _last_leaf_content_filter_error=false",
 "attr _last_leaf_level_3_verbatim=false",
 "attr _last_leaf_summary_model=\"\"",
-"attr _last_threshold_full_sweep=sha12/len=8b0929b098c9/435",
+"attr _last_threshold_full_sweep=sha12/len=215554f75db5/475",
 "attr _lifecycle=sha12/len=b74727d164bb/392",
 "attr _no_progress_ingest_generation=0",
 "attr _no_progress_observed_tokens=3000",
@@ -4004,7 +4004,7 @@
 "attr _uid_sparse_coverage=false",
 "attr _uid_superseded_store_ids=[]",
 "attr compression_count=1",
-"attrs count=154 sha256=2a29b6ce058f6b10317eedd2d265ce00c026f37705438a94d83eb8a0885915ea"
+"attrs count=154 sha256=2fdcd808e42d8dc42812d7abc8501ae91e5be7ee9f4e1af691ad0c4f3b9a6387"
 ],
 "finish-condensation-lock": [
 "compress attempt=1",
@@ -4639,7 +4639,7 @@
 "sql COMMIT",
 "return sha12/len=008cb4641a4a/4061",
 "telemetry hook: concrete class method, callable, no instance shadow",
-"sweep ordered keys sha12/len=356e8de243ec/364",
+"sweep ordered keys sha12/len=9eb2630c423a/383",
 "callable telemetry: completed leaf counted durably once",
 "leaf_prep after {\"chain\":[],\"counters\":{\"jobs_enqueued\":1,\"prepared\":6,\"promoted\":6}}",
 "sql BEGIN IMMEDIATE",
@@ -4667,7 +4667,7 @@
 "attr _last_leaf_content_filter_error=false",
 "attr _last_leaf_level_3_verbatim=false",
 "attr _last_leaf_summary_model=\"\"",
-"attr _last_threshold_full_sweep=sha12/len=d492ffdf6771/457",
+"attr _last_threshold_full_sweep=sha12/len=59b9491733db/497",
 "attr _lifecycle=sha12/len=b74727d164bb/392",
 "attr _no_progress_observed_tokens=150000",
 "attr _pending_emission_candidates=sha12/len=96992e6ef188/2717",
@@ -4683,7 +4683,7 @@
 "attr _uid_sparse_coverage=false",
 "attr _uid_superseded_store_ids=[]",
 "attr compression_count=1",
-"attrs count=154 sha256=5e29a12b62b905f9aec96fb49c475203df2bca88342f3eba821e8f90dd5af2f3"
+"attrs count=154 sha256=974b0e2fce398365bd44c25ed429432beb59e1d14556512f6c1ea2bfc151cbd3"
 ],
 "finish-repeat-condensation-skipped": [
 "compress attempt=1",
@@ -7934,7 +7934,7 @@
 "attr _last_leaf_content_filter_error=false",
 "attr _last_leaf_level_3_verbatim=false",
 "attr _last_leaf_summary_model=\"\"",
-"attr _last_threshold_full_sweep=sha12/len=8b0929b098c9/435",
+"attr _last_threshold_full_sweep=sha12/len=215554f75db5/475",
 "attr _lifecycle=sha12/len=b74727d164bb/392",
 "attr _no_progress_ingest_generation=0",
 "attr _no_progress_observed_tokens=3000",
@@ -7953,7 +7953,7 @@
 "attr _uid_sparse_coverage=false",
 "attr _uid_superseded_store_ids=[]",
 "attr compression_count=1",
-"attrs count=154 sha256=73ac2103f115651aceb0df82b5d514ba532cd165f3938869d778d562372996a2"
+"attrs count=154 sha256=2c44b1d4b6417cddde0bb35974de93ecb4c765853f0790c282e3572c136f0ecf"
 ],
 "legacy-filtered-backlog": [
 "compress attempt=1",
@@ -9057,7 +9057,7 @@
 "attr _last_leaf_content_filter_error=false",
 "attr _last_leaf_level_3_verbatim=false",
 "attr _last_leaf_summary_model=\"\"",
-"attr _last_threshold_full_sweep=sha12/len=bc1c2a33db49/425",
+"attr _last_threshold_full_sweep=sha12/len=8ae9245edbb5/465",
 "attr _lifecycle=sha12/len=b74727d164bb/392",
 "attr _no_progress_ingest_generation=0",
 "attr _no_progress_observed_tokens=3000",
@@ -9076,7 +9076,7 @@
 "attr _uid_sparse_coverage=false",
 "attr _uid_superseded_store_ids=[]",
 "attr compression_count=1",
-"attrs count=154 sha256=f02a0c75becb7e8db7ec6b05aabfc2d1981a5e3d56d27eb470d4bb9a296b3fb0"
+"attrs count=154 sha256=3ceb52ab437a73b95d703115411d86231910b8daa53cd6bba4ec2422cc2bcebd"
 ],
 "post-leaf-publication-conflict": [
 "compress attempt=1",
@@ -9625,7 +9625,7 @@
 "attr _last_leaf_content_filter_error=false",
 "attr _last_leaf_level_3_verbatim=false",
 "attr _last_leaf_summary_model=\"\"",
-"attr _last_threshold_full_sweep=sha12/len=d492ffdf6771/457",
+"attr _last_threshold_full_sweep=sha12/len=59b9491733db/497",
 "attr _lifecycle=sha12/len=b74727d164bb/392",
 "attr _no_progress_observed_tokens=150000",
 "attr _pending_emission_candidates=sha12/len=96992e6ef188/2717",
@@ -9641,7 +9641,7 @@
 "attr _uid_sparse_coverage=false",
 "attr _uid_superseded_store_ids=[]",
 "attr compression_count=1",
-"attrs count=154 sha256=5e29a12b62b905f9aec96fb49c475203df2bca88342f3eba821e8f90dd5af2f3"
+"attrs count=154 sha256=974b0e2fce398365bd44c25ed429432beb59e1d14556512f6c1ea2bfc151cbd3"
 ],
 "prepared-leaf-route-rejected": [
 "compress attempt=1",
@@ -10284,7 +10284,7 @@
 "attr _last_leaf_content_filter_error=false",
 "attr _last_leaf_level_3_verbatim=false",
 "attr _last_leaf_summary_model=\"\"",
-"attr _last_threshold_full_sweep=sha12/len=dbbc6d9d8db5/435",
+"attr _last_threshold_full_sweep=sha12/len=0ee613b6ed63/475",
 "attr _lifecycle=sha12/len=b74727d164bb/392",
 "attr _no_progress_observed_tokens=3000",
 "attr _no_progress_public_rows=sha12/len=fea0bda0dcc3/2625",
@@ -10301,7 +10301,7 @@
 "attr _uid_sparse_coverage=false",
 "attr _uid_superseded_store_ids=[]",
 "attr compression_count=1",
-"attrs count=154 sha256=9b718c84f955523505c174873b3c4d8c1c286b617e9314a971959a50ba8902d0"
+"attrs count=154 sha256=932b1de7044040f1289b55d90c9ed7242cb8059e7ebbdc47e43f258ba6a4f0f6"
 ],
 "publish-advance-nonlock": [
 "compress attempt=1",
@@ -11464,7 +11464,7 @@
 "attr _last_leaf_content_filter_error=false",
 "attr _last_leaf_level_3_verbatim=false",
 "attr _last_leaf_summary_model=\"\"",
-"attr _last_threshold_full_sweep=sha12/len=b45d96b31797/436",
+"attr _last_threshold_full_sweep=sha12/len=a2b64df0235e/476",
 "attr _lifecycle=sha12/len=b74727d164bb/392",
 "attr _no_progress_ingest_generation=0",
 "attr _no_progress_observed_tokens=3000",
@@ -11483,7 +11483,7 @@
 "attr _uid_sparse_coverage=false",
 "attr _uid_superseded_store_ids=[]",
 "attr compression_count=1",
-"attrs count=154 sha256=0dd312586b948d8b634d54413781a5b3d80adc086dd8f90c471291ee966316b0"
+"attrs count=154 sha256=c94c47074c2c442fa54add95896e2f60248ad9209b0f01c2a1301370e3e3feb2"
 ],
 "resume-commit-wide-tail": [
 "compress attempt=1",
@@ -13227,7 +13227,7 @@
 "attr _last_leaf_content_filter_error=false",
 "attr _last_leaf_level_3_verbatim=false",
 "attr _last_leaf_summary_model=\"\"",
-"attr _last_threshold_full_sweep=sha12/len=1490b3f17bad/436",
+"attr _last_threshold_full_sweep=sha12/len=d0a7d7920495/476",
 "attr _lifecycle=sha12/len=2945b78651c0/392",
 "attr _no_progress_ingest_generation=0",
 "attr _no_progress_observed_tokens=3000",
@@ -13246,7 +13246,7 @@
 "attr _uid_sparse_coverage=false",
 "attr _uid_superseded_store_ids=[]",
 "attr compression_count=1",
-"attrs count=154 sha256=529bf833d22d763313801e1f9e44db7a13cfc43d52a01936a91d156beb54d39f"
+"attrs count=154 sha256=989b1274b367b803db5571e1b4843ff75bdf71c13ef6ebc043b9ae036a61d981"
 ],
 "selection-unattributed": [
 "compress attempt=1",
@@ -15678,7 +15678,7 @@
 "attr _last_leaf_content_filter_error=false",
 "attr _last_leaf_level_3_verbatim=false",
 "attr _last_leaf_summary_model=\"\"",
-"attr _last_threshold_full_sweep=sha12/len=8b0929b098c9/435",
+"attr _last_threshold_full_sweep=sha12/len=215554f75db5/475",
 "attr _lifecycle=sha12/len=b74727d164bb/392",
 "attr _no_progress_ingest_generation=0",
 "attr _no_progress_observed_tokens=3000",
@@ -15697,7 +15697,7 @@
 "attr _uid_sparse_coverage=false",
 "attr _uid_superseded_store_ids=[]",
 "attr compression_count=1",
-"attrs count=154 sha256=5bfaeb2941527645e21bf91059534a4b8e2839f07269f241358a23073ad7b972"
+"attrs count=154 sha256=c9de3eca6fb5c89e8a07d570477e5f40c535efdf73c5fb9ee32a8819a07e8a29"
 ],
 "sweep-fresh-tail-yield": [
 "compress attempt=1",
@@ -15837,7 +15837,7 @@
 "attr _last_leaf_content_filter_error=false",
 "attr _last_leaf_level_3_verbatim=false",
 "attr _last_leaf_summary_model=\"\"",
-"attr _last_threshold_full_sweep=sha12/len=1490b3f17bad/436",
+"attr _last_threshold_full_sweep=sha12/len=d0a7d7920495/476",
 "attr _lifecycle=sha12/len=2945b78651c0/392",
 "attr _no_progress_ingest_generation=0",
 "attr _no_progress_observed_tokens=3000",
@@ -15856,7 +15856,7 @@
 "attr _uid_sparse_coverage=false",
 "attr _uid_superseded_store_ids=[]",
 "attr compression_count=1",
-"attrs count=154 sha256=529bf833d22d763313801e1f9e44db7a13cfc43d52a01936a91d156beb54d39f"
+"attrs count=154 sha256=989b1274b367b803db5571e1b4843ff75bdf71c13ef6ebc043b9ae036a61d981"
 ],
 "sweep-pass-budget": [
 "compress attempt=1",
@@ -16349,7 +16349,7 @@
 "attr _last_leaf_content_filter_error=false",
 "attr _last_leaf_level_3_verbatim=false",
 "attr _last_leaf_summary_model=\"\"",
-"attr _last_threshold_full_sweep=sha12/len=ef2a98199ff5/466",
+"attr _last_threshold_full_sweep=sha12/len=d9bfd560348b/506",
 "attr _lifecycle=sha12/len=b74727d164bb/392",
 "attr _no_progress_ingest_generation=0",
 "attr _no_progress_observed_tokens=3000",
@@ -16368,7 +16368,7 @@
 "attr _uid_sparse_coverage=false",
 "attr _uid_superseded_store_ids=[]",
 "attr compression_count=1",
-"attrs count=154 sha256=90465903e1740c06f7d625dc4b47a4e1ba74238faf93e85abeea6c6165e1f217"
+"attrs count=154 sha256=a221b2cdfcfe4fa49fd3a06abde21c6fed32914be6b4c2df54241c7bd63426e8"
 ],
 "sweep-stub-first-exit": [
 "compress attempt=1",
